@@ -95,7 +95,8 @@ if __name__ == "__main__":
         scheduler_step_size=3,
         scheduler_gamma=0.96,
         attack_epsilon=0.3, 
-        early_stopper_min_delta=0.01,
+        early_stopper_min_delta=0.002,
+        patience_tries=2, 
         batch_size=256) 
     
     network = MNIST_NET_256x2()
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
     criterion = nn.CrossEntropyLoss()
 
-    early_stopper = EarlyStopper(min_delta=training_parameters.early_stopper_min_delta)
+    early_stopper = EarlyStopper(patience=training_parameters.patience_tries,min_delta=training_parameters.early_stopper_min_delta)
 
     dataset = torchvision.datasets.MNIST('../../data', train=True, download=False,
                     transform=torchvision.transforms.ToTensor())

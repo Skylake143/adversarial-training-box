@@ -96,7 +96,8 @@ if __name__ == "__main__":
         scheduler_step_size=3,
         scheduler_gamma=0.98,
         attack_epsilon=0.3, 
-        early_stopper_min_delta=0.01, 
+        early_stopper_min_delta=0.002,
+        patience_tries=2, 
         batch_size=256)
     
     network = MNIST_NET_256x2()
@@ -105,11 +106,12 @@ if __name__ == "__main__":
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
     criterion = nn.CrossEntropyLoss()
 
-    early_stopper = EarlyStopper(min_delta=training_parameters.early_stopper_min_delta)
+    early_stopper = EarlyStopper(patience=training_parameters.patience_tries,min_delta=training_parameters.early_stopper_min_delta)
 
     dataset = torchvision.datasets.MNIST('../data', train=True, download=True, transform=torchvision.transforms.ToTensor())
-    train_dataset, validation_dataset,in_training_validation_set, = torch.utils.data.random_split(dataset, (0.78, 0.2, 0.02))
-    #TODO: split up in test and train set
+    train_dataset,in_training_validation_set, = torch.utils.data.random_split(dataset, (0.8, 0.2))
+
+    validation_dataset = torchvision.datasets.MNIST('../data', train=False, download=True, transform=torchvision.transforms.ToTensor())
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
 
