@@ -22,8 +22,6 @@ class StandardTestModule(TestModule):
 
             _, pred = output.data.max(1, keepdim=True)
 
-            total += target.size(0)
-
             if not self.attack is None:
                 correct_predictions = data[pred.eq(target.data.view_as(pred)).view_as(target)]
                 labels_for_correct_predictions = target[pred.eq(target.data.view_as(pred)).view_as(target)]
@@ -33,10 +31,12 @@ class StandardTestModule(TestModule):
                 _, adv_pred = output.data.max(1, keepdim=True)
 
                 correct += adv_pred.eq(labels_for_correct_predictions.data.view_as(adv_pred)).sum().item()
+                total += correct_predictions.size(0)
 
             else:
 
                 correct += pred.eq(target.data.view_as(pred)).sum().item()
+                total += target.size(0)
 
         final_acc = correct / total
 
