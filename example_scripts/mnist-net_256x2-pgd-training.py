@@ -12,14 +12,14 @@ from adversarial_training_box.adversarial_attack.fgsm_attack import FGSMAttack
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.pipeline.pipeline import Pipeline
-from adversarial_training_box.models.mnist_relu_4_1024 import MNIST_RELU_4_1024
+from adversarial_training_box.models.mnist_net_256x2 import MNIST_NET_256x2
 from adversarial_training_box.pipeline.standard_training_module import StandardTrainingModule
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 from adversarial_training_box.pipeline.early_stopper import EarlyStopper
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
 
 def objective(trial):
-    network = MNIST_RELU_4_1024()
+    network = MNIST_NET_256x2() # Can you automate this by keeping the network variable??
 
     optimizer_name = "Adam"
     weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-1, log=True)
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         early_stopper_min_delta=0.01,
         batch_size=256) 
     
-    network = MNIST_RELU_4_1024()
+    network = MNIST_NET_256x2()
 
     optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
@@ -132,15 +132,31 @@ if __name__ == "__main__":
         StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3),
     ]
     
+    # Convert complex objects to JSON-serializable format
+    def serialize_training_stack(stack):
+        return [{"epochs": epochs, "module_type": type(module).__name__, 
+                "attack": type(getattr(module, 'attack', None)).__name__ if hasattr(module, 'attack') and module.attack else "None",
+                "epsilon": getattr(module, 'epsilon', None)} for epochs, module in stack]
+    
+    def serialize_testing_stack(stack):
+        return [{"module_type": type(module).__name__,
+                "attack": type(getattr(module, 'attack', None)).__name__ if hasattr(module, 'attack') and module.attack else "None",
+                "epsilon": getattr(module, 'epsilon', None)} for module in stack]
+    
+    def serialize_validation_module(module):
+        return {"module_type": type(module).__name__,
+                "attack": type(getattr(module, 'attack', None)).__name__ if hasattr(module, 'attack') and module.attack else "None",
+                "epsilon": getattr(module, 'epsilon', None)}
+
     training_objects = AttributeDict(criterion=str(criterion), 
                                      optimizer=str(optimizer), 
                                      network=str(network), 
                                      scheduler=str(scheduler), 
-                                     training_stack=training_stack, 
-                                     testing_stack=testing_stack,
-                                     in_training_validation_module=in_training_validation_module)
+                                     training_stack=serialize_training_stack(training_stack),
+                                     testing_stack=serialize_testing_stack(testing_stack),
+                                     in_training_validation_module=serialize_validation_module(in_training_validation_module))
 
-    experiment_tracker = ExperimentTracker("mnist_relu_4_1024-pgd-training", Path("./generated"), login=True)
+    experiment_tracker = ExperimentTracker("mnist_net_256x2-standard-training", Path("./generated"), login=True)
 
     experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
