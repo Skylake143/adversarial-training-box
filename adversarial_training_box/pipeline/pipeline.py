@@ -37,7 +37,7 @@ class Pipeline:
                     network.eval()
                     _, _, validation_accuracy, robust_accuracy  = validation_module.test(in_training_validation_loader, network)
                     network.zero_grad()
-                    self.experiment_tracker.log({"training_validation_accuracy" : validation_accuracy, "validation_robust_accuracy" : robust_accuracy})
+                    self.experiment_tracker.log({"validation_training_accuracy" : validation_accuracy, "validation_robust_accuracy" : robust_accuracy})
                 
                 if early_stopper:
                     should_stop = early_stopper.early_stop(validation_accuracy)
