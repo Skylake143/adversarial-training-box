@@ -18,9 +18,6 @@ class StandardTrainingModule(TrainingModule):
         if not experiment_tracker is None:
             experiment_tracker.watch(network, self.criterion, log_option="all", log_frequency=10)
 
-        correct_predictions = 0
-        total_samples = 0
-
         for batch_idx, (data, target) in enumerate(data_loader):
             
             data, target = data.to(device), target.to(device)
@@ -35,15 +32,10 @@ class StandardTrainingModule(TrainingModule):
             loss.backward()
             optimizer.step()
 
-            # Accumulate correct predictions and total samples
-            predictions = output.max(1)[1]
-            correct_predictions += (predictions == target).sum().item()
-            total_samples += target.size(0)
-
             if not experiment_tracker is None:
                 experiment_tracker.log({"loss": loss.item()})
 
-        train_accuracy = correct_predictions / total_samples
+        train_accuracy = (output.max(1)[1] == target).sum().item() / target.size(0)
         return train_accuracy
 
     def __str__(self) -> str:
