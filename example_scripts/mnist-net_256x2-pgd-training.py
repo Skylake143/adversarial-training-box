@@ -50,7 +50,7 @@ def objective(trial):
 
         network.eval()
         test_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)
-        attack, epsilon, test_accuracy, test_adversarial_accuracy = test_module.test(validation_loader, network)
+        attack, epsilon, test_accuracy, test_robust_accuracy = test_module.test(validation_loader, network)
 
         trial.report(test_accuracy, epoch)
 

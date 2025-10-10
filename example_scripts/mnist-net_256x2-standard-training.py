@@ -46,13 +46,12 @@ def objective(trial):
     # , attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=attack_epsilon)
 
     for epoch in range(0,40):
-        network.train()
-        train_accuracy = training_module.train(train_loader, network, optimizer)
+        train_accuracy, robust_accuracy = training_module.train(train_loader, network, optimizer)
         scheduler.step()
 
         network.eval()
-        test_module = StandardTestModule()#attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)
-        attack, epsilon, test_accuracy = test_module.test(validation_loader, network)
+        test_module = StandardTestModule()
+        attack, epsilon, test_accuracy, validation_robust_accuracy = test_module.test(validation_loader, network)
 
         trial.report(test_accuracy, epoch)
 
@@ -62,34 +61,36 @@ def objective(trial):
     return test_accuracy
 
 if __name__ == "__main__":
-    torch.manual_seed(0)
+    # torch.manual_seed(0)
 
-    """ study = optuna.create_study(direction="maximize", storage="sqlite:///pgd_training.db")
-    study.optimize(objective, n_trials=300, timeout=6000)
+    # study = optuna.create_study(direction="maximize", storage="sqlite:///pgd_training.db")
+    # study.optimize(objective, n_trials=300, timeout=6000)
 
-    pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
-    complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
+    # pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
+    # complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
 
-    print("Study statistics: ")
-    print("  Number of finished trials: ", len(study.trials))
-    print("  Number of pruned trials: ", len(pruned_trials))
-    print("  Number of complete trials: ", len(complete_trials))
+    # print("Study statistics: ")
+    # print("  Number of finished trials: ", len(study.trials))
+    # print("  Number of pruned trials: ", len(pruned_trials))
+    # print("  Number of complete trials: ", len(complete_trials))
 
-    print("Best trial:")
-    trial = study.best_trial
+    # print("Best trial:")
+    # trial = study.best_trial
 
-    print("  Value: ", trial.value)
+    # print("  Value: ", trial.value)
 
-    print("  Params: ")
-    for key, value in trial.params.items():
-        print("    {}: {}".format(key, value))
+    # print("  Params: ")
+    # for key, value in trial.params.items():
+    #     print("    {}: {}".format(key, value))
 
-    training_parameters = AttributeDict(learning_rate=trial.params["lr"], 
-                                        weight_decay=trial.params["weight_decay"], 
-                                        scheduler_step_size=trial.params["scheduler_step_size"], 
-                                        scheduler_gamma=trial.params["scheduler_gamma"],
-                                        attack_epsilon=0.3,
-                                        early_stopper_min_delta=0.5) """
+    # training_parameters = AttributeDict(learning_rate=trial.params["lr"], 
+    #                                     weight_decay=trial.params["weight_decay"], 
+    #                                     scheduler_step_size=trial.params["scheduler_step_size"], 
+    #                                     scheduler_gamma=trial.params["scheduler_gamma"],
+    #                                     attack_epsilon=0.3,
+    #                                     early_stopper_min_delta=0.002,
+    #                                     patience_tries=2,
+    #                                     batch_size=256)
     training_parameters = AttributeDict(
         learning_rate = 0.002,
         weight_decay = 1e-5,
