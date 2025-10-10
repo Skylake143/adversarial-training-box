@@ -13,6 +13,7 @@ class StandardTrainingModule(TrainingModule):
 
 
     def train(self, data_loader: torch.utils.data.DataLoader, network: torch.nn.Module, optimizer: torch.optim, experiment_tracker: ExperimentTracker = None) -> float:
+        network.train()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if not experiment_tracker is None:
@@ -23,17 +24,14 @@ class StandardTrainingModule(TrainingModule):
         total_samples = 0
 
         for batch_idx, (data, target) in enumerate(data_loader):
-            
             data, target = data.to(device), target.to(device)
-            conventional_data = None
+            optimizer.zero_grad()
+            training_data = data
 
             if not self.attack is None:
-                conventional_data = data.clone()
-                data = self.attack.compute_perturbed_image(network=network, data=data, labels=target, epsilon=self.epsilon)
-                data.to(device)
+                training_data = self.attack.compute_perturbed_image(network=network, data=data, labels=target, epsilon=self.epsilon)
 
-            optimizer.zero_grad()
-            output = network(data)
+            output = network(training_data)
             loss = self.criterion(output, target)
             loss.backward()
             optimizer.step()
@@ -44,12 +42,10 @@ class StandardTrainingModule(TrainingModule):
             if not self.attack is None:
                 predictions = output.max(1)[1]
                 correct_predictions_adversarial += (predictions == target).sum().item()
-                network.eval()
                 with torch.no_grad():
-                    conventional_output = network(conventional_data)
-                network.train()
-                predictions = conventional_output.max(1)[1]
-                correct_predictions += (predictions == target).sum().item()
+                    conventional_output = network(data)
+                    predictions = conventional_output.max(1)[1]
+                    correct_predictions += (predictions == target).sum().item()
             else: 
                 predictions = output.max(1)[1]
                 correct_predictions += (predictions == target).sum().item()

@@ -45,7 +45,6 @@ def objective(trial):
     training_module = StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=attack_epsilon)
 
     for epoch in range(0,40):
-        network.train()
         train_accuracy, robust_accuracy = training_module.train(train_loader, network, optimizer)
         scheduler.step()
 
