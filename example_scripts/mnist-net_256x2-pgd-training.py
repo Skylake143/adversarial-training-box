@@ -46,12 +46,12 @@ def objective(trial):
 
     for epoch in range(0,40):
         network.train()
-        train_accuracy = training_module.train(train_loader, network, optimizer)
+        train_accuracy, robust_accuracy = training_module.train(train_loader, network, optimizer)
         scheduler.step()
 
         network.eval()
         test_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)
-        attack, epsilon, test_accuracy = test_module.test(validation_loader, network)
+        attack, epsilon, test_accuracy, test_adversarial_accuracy = test_module.test(validation_loader, network)
 
         trial.report(test_accuracy, epoch)
 
@@ -162,7 +162,7 @@ if __name__ == "__main__":
                                      testing_stack=serialize_testing_stack(testing_stack),
                                      in_training_validation_module=serialize_validation_module(in_training_validation_module))
 
-    experiment_tracker = ExperimentTracker("mnist_net_256x2-standard-training", Path("./generated"), login=True)
+    experiment_tracker = ExperimentTracker("mnist_net_256x2-pgd-training", Path("./generated"), login=True)
 
     experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
