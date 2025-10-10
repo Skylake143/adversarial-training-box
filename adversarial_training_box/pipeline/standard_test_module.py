@@ -13,8 +13,10 @@ class StandardTestModule(TestModule):
     def test(self, data_loader: torch.utils.data.DataLoader, network: torch.nn.Module) -> None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        correct_adversarial = 0
         correct = 0
         total = 0
+
         for data, target in data_loader:
             data, target = data.to(device), target.to(device)
 
@@ -30,17 +32,17 @@ class StandardTestModule(TestModule):
                 output = network(perturbed_data)
                 _, adv_pred = output.data.max(1, keepdim=True)
 
-                correct += adv_pred.eq(labels_for_correct_predictions.data.view_as(adv_pred)).sum().item()
-                total += correct_predictions.size(0)
+                correct_adversarial += adv_pred.eq(labels_for_correct_predictions.data.view_as(adv_pred)).sum().item()
 
-            else:
+            correct += pred.eq(target.data.view_as(pred)).sum().item()
+            total += target.size(0)
 
-                correct += pred.eq(target.data.view_as(pred)).sum().item()
-                total += target.size(0)
+        robust_accuracy = None
+        if not self.attack is None:
+            robust_accuracy = correct_adversarial/total
+        test_accuracy = correct / total
 
-        final_acc = correct / total
-
-        return self.attack, self.epsilon, final_acc
+        return self.attack, self.epsilon, test_accuracy, robust_accuracy
 
     def __str__(self) -> str:
         return f"test_module_filtered_adv_acc{self.attack}_{self.epsilon}"

@@ -26,20 +26,20 @@ class Pipeline:
         for epochs, module in training_stack:
             for epoch in range(0, epochs):
                 network.train()
-                train_accuracy = module.train(train_loader, network, self.optimizer, self.experiment_tracker)
+                train_accuracy, robust_accuracy = module.train(train_loader, network, self.optimizer, self.experiment_tracker)
                 validation_accuracy = train_accuracy
 
                 if not self.experiment_tracker is None:
-                    self.experiment_tracker.log({"train_accuracy" : train_accuracy})
+                    self.experiment_tracker.log({"train_accuracy" : train_accuracy, "robust_accuracy" : robust_accuracy})
 
                 if not self.scheduler is None:
                     self.scheduler.step()
                 
                 if validation_module:
                     network.eval()
-                    _, _, validation_accuracy = validation_module.test(in_training_validation_loader, network)
+                    _, _, validation_accuracy, robust_accuracy  = validation_module.test(in_training_validation_loader, network)
                     network.zero_grad()
-                    self.experiment_tracker.log({"training_validation_accuracy" : validation_accuracy})
+                    self.experiment_tracker.log({"training_validation_accuracy" : validation_accuracy, "robust_accuracy" : robust_accuracy})
                 
                 if early_stopper:
                     should_stop = early_stopper.early_stop(validation_accuracy)
@@ -56,11 +56,11 @@ class Pipeline:
         
         network.eval()
         for module in testing_stack:
-
+        
             print(f'testing for attack: {module.attack} and epsilon: {module.epsilon}')
 
-            attack, epsilon, accuracy = module.test(test_loader, network)
-            self.experiment_tracker.log_test_result({"epsilon" : epsilon, "attack" : str(attack), "accuracy" : accuracy})
+            attack, epsilon, test_accuracy, robust_accuracy = module.test(test_loader, network)
+            self.experiment_tracker.log_test_result({"epsilon" : epsilon, "attack" : str(attack), "accuracy" : test_accuracy})
 
         self.experiment_tracker.log_table_result_table_online()
 
