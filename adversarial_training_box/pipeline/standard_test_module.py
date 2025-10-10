@@ -27,16 +27,20 @@ class StandardTestModule(TestModule):
             _, pred = output.data.max(1, keepdim=True)
             correct_benign += pred.eq(target.data.view_as(pred)).sum().item()
 
+            # Calculate adversarial accuracies
             if not self.attack is None:
+                # Filter out predictions that are correctly predicted in unperturbed case, as others will be incorrect anyways
                 correct_predictions = data[pred.eq(target.data.view_as(pred)).view_as(target)]
                 labels_for_correct_predictions = target[pred.eq(target.data.view_as(pred)).view_as(target)]
                 perturbed_data = self.attack.compute_perturbed_image(network=network, data=correct_predictions, labels=labels_for_correct_predictions, epsilon=self.epsilon)
+                # perturbed_data = self.attack.compute_perturbed_image(network=network, data=data, labels=target, epsilon=self.epsilon)
 
                 output = network(perturbed_data)
                 _, adv_pred = output.data.max(1, keepdim=True)
 
                 correct_adversarial += adv_pred.eq(labels_for_correct_predictions.data.view_as(adv_pred)).sum().item()
 
+        # Calculate accuracies
         robust_accuracy = correct_adversarial / total
         test_accuracy = correct_benign / total
 
