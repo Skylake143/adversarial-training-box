@@ -59,7 +59,9 @@ class StandardTrainingModule(TrainingModule):
 
         # Calculate accuracies
         train_accuracy = correct_predictions_benign/total_samples
-        robust_accuracy = correct_predictions_adversarial / total_samples
+        robust_accuracy = None
+        if not self.attack is None:
+            robust_accuracy = correct_predictions_adversarial / total_samples
         
         return train_accuracy, robust_accuracy
 

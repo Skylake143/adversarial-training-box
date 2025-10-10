@@ -41,7 +41,9 @@ class StandardTestModule(TestModule):
                 correct_adversarial += adv_pred.eq(labels_for_correct_predictions.data.view_as(adv_pred)).sum().item()
 
         # Calculate accuracies
-        robust_accuracy = correct_adversarial / total
+        robust_accuracy = None
+        if not self.attack is None:
+            robust_accuracy = correct_adversarial / total
         test_accuracy = correct_benign / total
 
         return self.attack, self.epsilon, test_accuracy, robust_accuracy
