@@ -61,34 +61,36 @@ def objective(trial):
     return test_accuracy
 
 if __name__ == "__main__":
-    torch.manual_seed(0)
+    # torch.manual_seed(0)
 
-    """ study = optuna.create_study(direction="maximize", storage="sqlite:///pgd_training.db")
-    study.optimize(objective, n_trials=300, timeout=6000)
+    # study = optuna.create_study(direction="maximize", storage="sqlite:///pgd_training.db")
+    # study.optimize(objective, n_trials=300, timeout=6000)
 
-    pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
-    complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
+    # pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
+    # complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
 
-    print("Study statistics: ")
-    print("  Number of finished trials: ", len(study.trials))
-    print("  Number of pruned trials: ", len(pruned_trials))
-    print("  Number of complete trials: ", len(complete_trials))
+    # print("Study statistics: ")
+    # print("  Number of finished trials: ", len(study.trials))
+    # print("  Number of pruned trials: ", len(pruned_trials))
+    # print("  Number of complete trials: ", len(complete_trials))
 
-    print("Best trial:")
-    trial = study.best_trial
+    # print("Best trial:")
+    # trial = study.best_trial
 
-    print("  Value: ", trial.value)
+    # print("  Value: ", trial.value)
 
-    print("  Params: ")
-    for key, value in trial.params.items():
-        print("    {}: {}".format(key, value))
+    # print("  Params: ")
+    # for key, value in trial.params.items():
+    #     print("    {}: {}".format(key, value))
 
-    training_parameters = AttributeDict(learning_rate=trial.params["lr"], 
-                                        weight_decay=trial.params["weight_decay"], 
-                                        scheduler_step_size=trial.params["scheduler_step_size"], 
-                                        scheduler_gamma=trial.params["scheduler_gamma"],
-                                        attack_epsilon=0.3,
-                                        early_stopper_min_delta=0.5) """
+    # training_parameters = AttributeDict(learning_rate=trial.params["lr"], 
+    #                                     weight_decay=trial.params["weight_decay"], 
+    #                                     scheduler_step_size=trial.params["scheduler_step_size"], 
+    #                                     scheduler_gamma=trial.params["scheduler_gamma"],
+    #                                     attack_epsilon=0.3,
+    #                                     early_stopper_min_delta=0.002,
+    #                                     patience_tries=2, 
+    #                                     batch_size=256)
     training_parameters = AttributeDict(
         learning_rate = 0.002,
         weight_decay = 1e-5,
@@ -107,10 +109,13 @@ if __name__ == "__main__":
 
     early_stopper = EarlyStopper(patience=training_parameters.patience_tries,min_delta=training_parameters.early_stopper_min_delta)
 
-    dataset = torchvision.datasets.MNIST('../../data', train=True, download=False,
+    dataset = torchvision.datasets.MNIST('../data', train=True, download=False,
                     transform=torchvision.transforms.ToTensor())
     
-    train_dataset, validation_dataset, in_training_validation_set, = torch.utils.data.random_split(dataset, (0.78, 0.2, 0.02))
+    dataset = torchvision.datasets.MNIST('../data', train=True, download=True, transform=torchvision.transforms.ToTensor())
+    train_dataset,in_training_validation_set, = torch.utils.data.random_split(dataset, (0.8, 0.2))
+
+    validation_dataset = torchvision.datasets.MNIST('../data', train=False, download=True, transform=torchvision.transforms.ToTensor())
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
 
