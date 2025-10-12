@@ -51,7 +51,7 @@ def objective(trial):
 
         network.eval()
         test_module = StandardTestModule()
-        attack, epsilon, test_accuracy, validation_robust_accuracy = test_module.test(validation_loader, network)
+        attack, epsilon, test_accuracy, validation_robust_accuracy, valid_loss = test_module.test(validation_loader, network)
 
         trial.report(test_accuracy, epoch)
 
@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
     in_training_validation_loader = torch.utils.data.DataLoader(in_training_validation_set, batch_size=1000, shuffle=True)
 
-    in_training_validation_module = StandardTestModule()
+    in_training_validation_module = StandardTestModule(criterion=criterion)
 
     training_stack = []
     training_stack.append((300, StandardTrainingModule(criterion=criterion)))
