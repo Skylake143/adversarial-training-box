@@ -40,7 +40,6 @@ class StandardTestModule(TestModule):
                 correct_predictions = data[pred.eq(target.data.view_as(pred)).view_as(target)]
                 labels_for_correct_predictions = target[pred.eq(target.data.view_as(pred)).view_as(target)]
                 perturbed_data = self.attack.compute_perturbed_image(network=network, data=correct_predictions, labels=labels_for_correct_predictions, epsilon=self.epsilon)
-                # perturbed_data = self.attack.compute_perturbed_image(network=network, data=data, labels=target, epsilon=self.epsilon)
 
                 output = network(perturbed_data)
                 _, adv_pred = output.data.max(1, keepdim=True)

@@ -19,7 +19,7 @@ class Pipeline:
     def save_model(self, network):
         self.experiment_tracker.save_model(network)
 
-    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, in_training_validation_loader: torch.utils.data.DataLoader = None, early_stopper: EarlyStopping = None):
+    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, validation_loader: torch.utils.data.DataLoader = None, early_stopper: EarlyStopping = None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         network.to(device)
 
@@ -50,7 +50,7 @@ class Pipeline:
                 
                 if validation_module:
                     network.eval()
-                    _, _, validation_accuracy, robust_accuracy, valid_loss  = validation_module.test(in_training_validation_loader, network)
+                    _, _, validation_accuracy, robust_accuracy, valid_loss  = validation_module.test(validation_loader, network)
                     network.zero_grad()
                     self.experiment_tracker.log({"validation_accuracy" : validation_accuracy, "validation_robust_accuracy" : robust_accuracy, "validation_loss" : valid_loss})
                 
