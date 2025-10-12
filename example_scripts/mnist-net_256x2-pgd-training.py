@@ -50,7 +50,7 @@ def objective(trial):
 
         network.eval()
         test_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)
-        attack, epsilon, test_accuracy, test_robust_accuracy = test_module.test(validation_loader, network)
+        attack, epsilon, test_accuracy, test_robust_accuracy, valid_loss = test_module.test(validation_loader, network)
 
         trial.report(test_accuracy, epoch)
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
     in_training_validation_loader = torch.utils.data.DataLoader(in_training_validation_set, batch_size=1000, shuffle=True)
 
-    in_training_validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)
+    in_training_validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3, criterion=criterion)
 
     training_stack = []
     training_stack.append((300, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)))

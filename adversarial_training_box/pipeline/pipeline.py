@@ -5,6 +5,7 @@ from adversarial_training_box.database.experiment_tracker import ExperimentTrack
 from adversarial_training_box.pipeline.training_module import TrainingModule
 from adversarial_training_box.pipeline.test_module import TestModule
 from adversarial_training_box.pipeline.early_stopper import EarlyStopper
+#from early_stopping_pytorch import EarlyStopping
 
 
 class Pipeline:
@@ -35,11 +36,12 @@ class Pipeline:
                 
                 if validation_module:
                     network.eval()
-                    _, _, validation_accuracy, robust_accuracy  = validation_module.test(in_training_validation_loader, network)
+                    _, _, validation_accuracy, robust_accuracy, valid_loss  = validation_module.test(in_training_validation_loader, network)
                     network.zero_grad()
-                    self.experiment_tracker.log({"validation_training_accuracy" : validation_accuracy, "validation_robust_accuracy" : robust_accuracy})
+                    self.experiment_tracker.log({"validation_training_accuracy" : validation_accuracy, "validation_robust_accuracy" : robust_accuracy, "validation_loss" : valid_loss})
                 
                 if early_stopper:
+
                     should_stop = early_stopper.early_stop(validation_accuracy)
                     if should_stop:
                         print(f"early stopped at epoch: {epoch}")
@@ -57,7 +59,7 @@ class Pipeline:
         
             print(f'testing for attack: {module.attack} and epsilon: {module.epsilon}')
 
-            attack, epsilon, test_accuracy, robust_accuracy = module.test(test_loader, network)
+            attack, epsilon, test_accuracy, robust_accuracy, valid_loss = module.test(test_loader, network)
             self.experiment_tracker.log_test_result({"epsilon" : epsilon, "attack" : str(attack), "accuracy" : test_accuracy, "robust_accuracy" : robust_accuracy})
 
         self.experiment_tracker.log_table_result_table_online()
