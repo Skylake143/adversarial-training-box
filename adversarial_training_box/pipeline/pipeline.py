@@ -1,11 +1,11 @@
-
 import torch
+from early_stopping_pytorch import EarlyStopping
+import time
 
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
 from adversarial_training_box.pipeline.training_module import TrainingModule
 from adversarial_training_box.pipeline.test_module import TestModule
-from adversarial_training_box.pipeline.early_stopper import EarlyStopper
 
 
 class Pipeline:
@@ -19,36 +19,63 @@ class Pipeline:
     def save_model(self, network):
         self.experiment_tracker.save_model(network)
 
-    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, in_training_validation_loader: torch.utils.data.DataLoader = None, early_stopper: EarlyStopper = None):
+    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, validation_loader: torch.utils.data.DataLoader = None, early_stopper: EarlyStopping = None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         network.to(device)
 
+        # Experiment metrics
+        training_time = 0
+        early_stopping = False
+        early_stopping_epoch = None
+
+        # Create CUDA event objects for timing
+        if torch.cuda.is_available():
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            start_event.record()
+        else: 
+            start_time = time.perf_counter()
+
+
         for epochs, module in training_stack:
             for epoch in range(0, epochs):
-                network.train()
-                train_accuracy = module.train(train_loader, network, self.optimizer, self.experiment_tracker)
+                train_accuracy, robust_accuracy = module.train(train_loader, network, self.optimizer, self.experiment_tracker)
                 validation_accuracy = train_accuracy
 
                 if not self.experiment_tracker is None:
-                    self.experiment_tracker.log({"train_accuracy" : train_accuracy})
+                    self.experiment_tracker.log({"train_accuracy" : train_accuracy, "train_robust_accuracy" : robust_accuracy})
 
                 if not self.scheduler is None:
                     self.scheduler.step()
                 
                 if validation_module:
                     network.eval()
-                    _, _, validation_accuracy = validation_module.test(in_training_validation_loader, network)
+                    _, _, validation_accuracy, robust_accuracy, valid_loss  = validation_module.test(validation_loader, network)
                     network.zero_grad()
-                    self.experiment_tracker.log({"training_validation_accuracy" : validation_accuracy})
+                    self.experiment_tracker.log({"validation_accuracy" : validation_accuracy, "validation_robust_accuracy" : robust_accuracy, "validation_loss" : valid_loss})
                 
-                if early_stopper:
-                    should_stop = early_stopper.early_stop(validation_accuracy)
-                    if should_stop:
-                        print(f"early stopped at epoch: {epoch}")
-                        break
+                    if early_stopper:
+                        # Early stopping call
+                        early_stopper(valid_loss, network)
+                        if early_stopper.early_stop:
+                            early_stopping = True
+                            early_stopping_epoch = epoch + 1
+                            print("Early stopping triggered")
+                            break
 
                 self.save_model(network)
-
+        
+        if torch.cuda.is_available():
+            end_event.record()
+            torch.cuda.synchronize()
+            duration_ms = start_event.elapsed_time(end_event)
+            training_time = duration_ms / 1000
+        else: 
+            end_time = time.perf_counter()
+            training_time = end_time - start_time
+        
+        if not self.experiment_tracker is None:
+            self.experiment_tracker.log_training_metrics({"training_time (s)" : training_time, "early_stopping" : bool(early_stopping), "early_stopping_epoch" : early_stopping_epoch})
 
     def test(self, network: torch.nn.Module, test_loader: torch.utils.data.DataLoader, testing_stack: list[TestModule]):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -56,11 +83,11 @@ class Pipeline:
         
         network.eval()
         for module in testing_stack:
-
+        
             print(f'testing for attack: {module.attack} and epsilon: {module.epsilon}')
 
-            attack, epsilon, accuracy = module.test(test_loader, network)
-            self.experiment_tracker.log_test_result({"epsilon" : epsilon, "attack" : str(attack), "accuracy" : accuracy})
+            attack, epsilon, test_accuracy, robust_accuracy, valid_loss = module.test(test_loader, network)
+            self.experiment_tracker.log_test_result({"epsilon" : epsilon, "attack" : str(attack), "accuracy" : test_accuracy, "robust_accuracy" : robust_accuracy})
 
         self.experiment_tracker.log_table_result_table_online()
 
