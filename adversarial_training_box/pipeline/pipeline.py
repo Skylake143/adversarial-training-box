@@ -1,11 +1,11 @@
 import torch
+from early_stopping_pytorch import EarlyStopping
+
 
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
 from adversarial_training_box.pipeline.training_module import TrainingModule
 from adversarial_training_box.pipeline.test_module import TestModule
-from adversarial_training_box.pipeline.early_stopper import EarlyStopper
-#from early_stopping_pytorch import EarlyStopping
 
 
 class Pipeline:
@@ -19,7 +19,7 @@ class Pipeline:
     def save_model(self, network):
         self.experiment_tracker.save_model(network)
 
-    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, in_training_validation_loader: torch.utils.data.DataLoader = None, early_stopper: EarlyStopper = None):
+    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, in_training_validation_loader: torch.utils.data.DataLoader = None, early_stopper: EarlyStopping = None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         network.to(device)
 
@@ -29,7 +29,7 @@ class Pipeline:
                 validation_accuracy = train_accuracy
 
                 if not self.experiment_tracker is None:
-                    self.experiment_tracker.log({"train_accuracy" : train_accuracy, "robust_accuracy" : robust_accuracy})
+                    self.experiment_tracker.log({"train_accuracy" : train_accuracy, "train_robust_accuracy" : robust_accuracy})
 
                 if not self.scheduler is None:
                     self.scheduler.step()
@@ -38,13 +38,13 @@ class Pipeline:
                     network.eval()
                     _, _, validation_accuracy, robust_accuracy, valid_loss  = validation_module.test(in_training_validation_loader, network)
                     network.zero_grad()
-                    self.experiment_tracker.log({"validation_training_accuracy" : validation_accuracy, "validation_robust_accuracy" : robust_accuracy, "validation_loss" : valid_loss})
+                    self.experiment_tracker.log({"validation_accuracy" : validation_accuracy, "validation_robust_accuracy" : robust_accuracy, "validation_loss" : valid_loss})
                 
                 if early_stopper:
-
-                    should_stop = early_stopper.early_stop(validation_accuracy)
-                    if should_stop:
-                        print(f"early stopped at epoch: {epoch}")
+                    # Early stopping call
+                    early_stopper(valid_loss, network)
+                    if early_stopper.early_stop:
+                        print("Early stopping triggered")
                         break
 
                 self.save_model(network)
