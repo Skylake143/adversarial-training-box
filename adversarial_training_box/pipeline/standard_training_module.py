@@ -41,7 +41,7 @@ class StandardTrainingModule(TrainingModule):
             optimizer.step()
 
             if not experiment_tracker is None:
-                experiment_tracker.log({"loss": loss.item()})
+                experiment_tracker.log({"train_loss": loss.item()})
 
             # Accumulate predictions for adversarial and benign case
             if not self.attack is None:

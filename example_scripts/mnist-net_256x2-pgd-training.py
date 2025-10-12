@@ -31,7 +31,7 @@ def objective(trial):
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step_size, gamma=scheduler_gamma)
     criterion = nn.CrossEntropyLoss()
 
-    dataset = torchvision.datasets.MNIST('../../data', train=True, download=False,
+    dataset = torchvision.datasets.MNIST('../data', train=True, download=False,
                     transform=torchvision.transforms.ToTensor())
 
     train_dataset, validation_dataset = torch.utils.data.random_split(dataset, (0.8, 0.2))
@@ -97,35 +97,34 @@ if __name__ == "__main__":
         scheduler_gamma=0.96,
         attack_epsilon=0.3, 
         patience_epochs=5, 
-        batch_size=256) 
+        batch_size=256)
     
     network = MNIST_NET_256x2()
 
+    # Training configuration
     optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
     criterion = nn.CrossEntropyLoss()
-
     early_stopper = EarlyStopping(patience=training_parameters.patience_epochs,verbose=True)
 
-    dataset = torchvision.datasets.MNIST('../data', train=True, download=False,
-                    transform=torchvision.transforms.ToTensor())
-    
+    # Train, validation and test dataset
     dataset = torchvision.datasets.MNIST('../data', train=True, download=True, transform=torchvision.transforms.ToTensor())
-    train_dataset,in_training_validation_set, = torch.utils.data.random_split(dataset, (0.8, 0.2))
+    train_dataset,validation_dataset, = torch.utils.data.random_split(dataset, (0.8, 0.2))
+    test_dataset = torchvision.datasets.MNIST('../data', train=False, download=True, transform=torchvision.transforms.ToTensor())
 
-    validation_dataset = torchvision.datasets.MNIST('../data', train=False, download=True, transform=torchvision.transforms.ToTensor())
-
+    # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
-
     validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=1000, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
 
-    in_training_validation_loader = torch.utils.data.DataLoader(in_training_validation_set, batch_size=1000, shuffle=True)
+    # Validation module
+    validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3, criterion=criterion)
 
-    in_training_validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3, criterion=criterion)
-
+    # Training modules stack
     training_stack = []
     training_stack.append((300, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)))
 
+    # Testing modules stack
     testing_stack = [
         StandardTestModule(),
         StandardTestModule(attack=FGSMAttack(), epsilon=0.1),
@@ -158,18 +157,19 @@ if __name__ == "__main__":
                                      scheduler=str(scheduler), 
                                      training_stack=serialize_training_stack(training_stack),
                                      testing_stack=serialize_testing_stack(testing_stack),
-                                     in_training_validation_module=serialize_validation_module(in_training_validation_module))
+                                     validation_module=serialize_validation_module(validation_module))
 
+    # Setup experiment
     experiment_tracker = ExperimentTracker("mnist_net_256x2-pgd-training", Path("./generated"), login=True)
-
     experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
 
+    # Train
     pipeline.train(train_loader, network, training_stack, early_stopper=early_stopper, 
-                   in_training_validation_loader=in_training_validation_loader,
-                   validation_module=in_training_validation_module
+                   validation_loader=validation_loader,
+                   validation_module=validation_module
                    )
 
+    # Test
     network = experiment_tracker.load_trained_model(network)
-
-    pipeline.test(network, validation_loader, testing_stack=testing_stack)
+    pipeline.test(network, test_loader, testing_stack=testing_stack)
