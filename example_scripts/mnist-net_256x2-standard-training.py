@@ -167,3 +167,5 @@ if __name__ == "__main__":
     # Test
     network = experiment_tracker.load_trained_model(network)
     pipeline.test(network, test_loader, testing_stack=testing_stack)
+    experiment_tracker.export_to_onnx(network, test_loader)
+
