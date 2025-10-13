@@ -1,6 +1,7 @@
 import torch
 from early_stopping_pytorch import EarlyStopping
 import time
+from datetime import datetime
 
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
@@ -20,6 +21,8 @@ class Pipeline:
         self.experiment_tracker.save_model(network)
 
     def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, validation_loader: torch.utils.data.DataLoader = None, early_stopper: EarlyStopping = None):
+        training_starttime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         network.to(device)
 
@@ -75,7 +78,7 @@ class Pipeline:
             training_time = end_time - start_time
         
         if not self.experiment_tracker is None:
-            self.experiment_tracker.log_training_metrics({"training_time (s)" : training_time, "early_stopping" : bool(early_stopping), "early_stopping_epoch" : early_stopping_epoch})
+            self.experiment_tracker.log_training_metrics({"training_time (s)" : training_time, "early_stopping" : bool(early_stopping), "early_stopping_epoch" : early_stopping_epoch, "training_start_datetime" : training_starttime})
 
     def test(self, network: torch.nn.Module, test_loader: torch.utils.data.DataLoader, testing_stack: list[TestModule]):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
