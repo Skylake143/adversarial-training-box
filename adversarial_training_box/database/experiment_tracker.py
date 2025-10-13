@@ -54,8 +54,14 @@ class ExperimentTracker:
         return torch_model
     
     def export_to_onnx(self, torch_model: torch.nn.Module, data_loader: torch.utils.data.DataLoader):
+        torch_model.eval() 
+        
         example_input, _ = next(iter(data_loader))
         example_input = example_input[0]
+
+        device = next(torch_model.parameters()).device
+        example_input = example_input.to(device)
+
         if ("cnn" in torch_model.name) or ("cifar" in torch_model.name) or ("resnet" in torch_model.name) or ("conv" in torch_model.name) or ("gtsrb" in torch_model.name):
             example_input = example_input.unsqueeze(0)
         torch.onnx.export(torch_model, example_input, 
