@@ -1,6 +1,9 @@
 import torch
 from early_stopping_pytorch import EarlyStopping
 import time
+import platform
+import cpuinfo
+import psutil
 from datetime import datetime
 
 from adversarial_training_box.database.attribute_dict import AttributeDict
@@ -25,6 +28,21 @@ class Pipeline:
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         network.to(device)
+
+        if torch.cuda.is_available():
+            device_name = torch.cuda.get_device_name(0)
+            device_properties = torch.cuda.get_device_properties(0)
+            total_memory_gb = device_properties.total_memory / (1024**3) 
+            device_type = "GPU"
+            device_info = f"{device_type}: {device_name} ({total_memory_gb:.1f} GB VRAM)"
+        else:
+            try:
+                cpu_info = cpuinfo.get_cpu_info()
+                cpu_name = cpu_info.get('brand_raw', 'Unknown CPU')
+            except:
+                cpu_name = platform.processor() or "Unknown CPU"
+            device_type = "CPU"
+            device_info = f"{device_type}: {cpu_name}"
 
         # Experiment metrics
         training_time = 0
@@ -78,7 +96,7 @@ class Pipeline:
             training_time = end_time - start_time
         
         if not self.experiment_tracker is None:
-            self.experiment_tracker.log_training_metrics({"training_time (s)" : training_time, "early_stopping" : bool(early_stopping), "early_stopping_epoch" : early_stopping_epoch, "training_start_datetime" : training_starttime})
+            self.experiment_tracker.log_training_metrics({"training_time (s)" : training_time, "early_stopping" : bool(early_stopping), "early_stopping_epoch" : early_stopping_epoch, "training_start_datetime" : training_starttime, "device_type" : device_type, "device_info" : device_info})
 
     def test(self, network: torch.nn.Module, test_loader: torch.utils.data.DataLoader, testing_stack: list[TestModule]):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
