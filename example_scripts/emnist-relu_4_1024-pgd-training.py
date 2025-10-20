@@ -13,7 +13,7 @@ from adversarial_training_box.adversarial_attack.fgsm_attack import FGSMAttack
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.pipeline.pipeline import Pipeline
-from adversarial_training_box.models.mnist_net_256x2 import MNIST_NET_256x2
+from adversarial_training_box.models.emnist_relu_4_1024 import EMNIST_RELU_4_1024
 from adversarial_training_box.pipeline.standard_training_module import StandardTrainingModule
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
@@ -29,7 +29,7 @@ if __name__ == "__main__":
         overhead_delta=0.001,
         batch_size=256)
     
-    network = MNIST_NET_256x2()
+    network = EMNIST_RELU_4_1024()
 
     # Training configuration
     optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
@@ -38,9 +38,9 @@ if __name__ == "__main__":
     early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
 
     # Train, validation and test dataset
-    dataset = torchvision.datasets.MNIST('../data', train=True, download=True, transform=torchvision.transforms.ToTensor())
+    dataset = torchvision.datasets.EMNIST('../data', split="balanced",train=True, download=True, transform=torchvision.transforms.ToTensor())
     train_dataset,validation_dataset, = torch.utils.data.random_split(dataset, (0.8, 0.2))
-    test_dataset = torchvision.datasets.MNIST('../data', train=False, download=True, transform=torchvision.transforms.ToTensor())
+    test_dataset = torchvision.datasets.EMNIST('../data', split="balanced",train=False, download=True, transform=torchvision.transforms.ToTensor())
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
@@ -90,12 +90,13 @@ if __name__ == "__main__":
                                      validation_module=serialize_validation_module(validation_module))
 
     # Setup experiment
-    experiment_tracker = ExperimentTracker("mnist_net_256x2-pgd-training", Path("./generated"), login=True)
+    experiment_tracker = ExperimentTracker("emnist_relu_4_1024-pgd-training", Path("./generated"), login=True)
     experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
-    pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
+    #TODO: scheduler None
+    pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, None)
 
     # Train
-    pipeline.train(train_loader, network, training_stack, early_stopper=early_stopper, 
+    pipeline.train(train_loader, network, training_stack, early_stopper=None, 
                    validation_loader=validation_loader,
                    validation_module=validation_module
                    )
