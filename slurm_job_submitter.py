@@ -146,15 +146,15 @@ echo "## Job finished. Goodbye"
 
 def main():
     submitter = SlurmJobSubmitter()
-    networks = ["MNIST_NET_256x2", "MNIST_NET_256x6"]
+    networks = ["MNIST_RELU_4_256", "MNIST_RELU_4_1024", "MNIST_RELU_5_256", "MNIST_RELU_6_256", "CNN_SMALL","CNN_MADRY_MEDIUM", "CNN_YANG_BIG"]
     job_configs = []
     
     for network in networks:
         config = SlurmJobConfig(
             job_name=f"mnist_conventional_training_{network.lower()}",
             script_path="example_scripts/standard-training.py",
-            partition="testing",
-            time_limit="00:05:00"
+            partition="gpu-short", # gpu-short;gpu-2080ti-11g; gpu-mig-40g; gpu-a100-80g
+            time_limit="01:00:00"
         )
         args = f"--network {network} --experiment_name {network.lower()}-standard-training"
         job_configs.append((config, args))
