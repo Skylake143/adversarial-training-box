@@ -1,9 +1,10 @@
 import torch
-from early_stopping_pytorch import EarlyStopping
 import time
 import platform
 import cpuinfo
 from datetime import datetime
+from collections import deque
+import numpy as np
 
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
@@ -22,11 +23,11 @@ class Pipeline:
     def save_model(self, network):
         self.experiment_tracker.save_model(network)
 
-    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, validation_loader: torch.utils.data.DataLoader = None, early_stopper: EarlyStopping = None):
-        training_starttime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, validation_loader: torch.utils.data.DataLoader = None, early_stopper = None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         network.to(device)
+
+        training_starttime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         if torch.cuda.is_available():
             device_name = torch.cuda.get_device_name(0)
@@ -45,8 +46,15 @@ class Pipeline:
 
         # Experiment metrics
         training_time = 0
+
+        # Early stopper data
+        best_validation_accuracy=-1.0
         early_stopping = False
         early_stopping_epoch = None
+
+        if validation_module and hasattr(validation_module, 'attack') and validation_module.attack:
+            smoothing_window_size = 10
+            val_robust_acc_history = deque(maxlen=smoothing_window_size)
 
         # Create CUDA event objects for timing
         if torch.cuda.is_available():
@@ -63,27 +71,46 @@ class Pipeline:
                 validation_accuracy = train_accuracy
 
                 if not self.experiment_tracker is None:
-                    self.experiment_tracker.log({"train_accuracy" : train_accuracy, "train_robust_accuracy" : robust_accuracy})
+                    self.experiment_tracker.log({"train_accuracy" : train_accuracy, "train_robust_accuracy" : robust_accuracy, "epoch": epoch +1})
 
                 if not self.scheduler is None:
                     self.scheduler.step()
                 
                 if validation_module:
                     network.eval()
-                    _, _, validation_accuracy, robust_accuracy, valid_loss  = validation_module.test(validation_loader, network)
+                    _, _, validation_accuracy, validation_robust_accuracy, valid_loss  = validation_module.test(validation_loader, network)
                     network.zero_grad()
-                    self.experiment_tracker.log({"validation_accuracy" : validation_accuracy, "validation_robust_accuracy" : robust_accuracy, "validation_loss" : valid_loss})
+                    self.experiment_tracker.log({"validation_accuracy" : validation_accuracy, "validation_robust_accuracy" : validation_robust_accuracy, "validation_loss" : valid_loss})
                 
+                    # Early stopper works on robust accuracy in adversarial training case and train accuracy in conventional case
                     if early_stopper:
-                        # Early stopping call
-                        early_stopper(valid_loss, network)
-                        if early_stopper.early_stop:
-                            early_stopping = True
-                            early_stopping_epoch = epoch + 1
-                            print("Early stopping triggered")
-                            break
+                        if validation_robust_accuracy is not None: # Early Stopper based on smoothed robust accuracy
+                            val_robust_acc_history.append(validation_robust_accuracy)
+                        
+                            if len(val_robust_acc_history) == smoothing_window_size:
+                                smoothed_val_robust_accuracy = np.mean(list(val_robust_acc_history))
 
-                self.save_model(network)
+                                if self.experiment_tracker:
+                                    self.experiment_tracker.log({"smoothed_val_robust_accuracy": smoothed_val_robust_accuracy})
+
+                                if early_stopper.early_stop(smoothed_val_robust_accuracy):
+                                    early_stopping = True
+                                    early_stopping_epoch = epoch + 1
+                                    print(f"Early stopped at epoch: {early_stopping_epoch}")
+                                    break
+                        else: # Early stopping call based on validation accuracy
+                            if early_stopper.early_stop(validation_accuracy):
+                                early_stopping = True
+                                early_stopping_epoch = epoch + 1
+                                print(f"Early stopped at epoch: {early_stopping_epoch}")
+                                break
+
+                    if validation_accuracy > best_validation_accuracy:
+                        best_validation_accuracy = validation_accuracy
+                        print(f"New best model found at epoch {epoch+1} with validation accuracy: {best_validation_accuracy:.4f}. Saving model.")
+                        self.save_model(network)
+                else: 
+                    self.save_model(network)
         
         if torch.cuda.is_available():
             end_event.record()
@@ -110,7 +137,6 @@ class Pipeline:
             self.experiment_tracker.log_test_result({"epsilon" : epsilon, "attack" : str(attack), "accuracy" : test_accuracy, "robust_accuracy" : robust_accuracy})
 
         self.experiment_tracker.log_table_result_table_online()
-
 
     def test_accuracy_class_wise(self, network: torch.nn.Module):
         classes = [0,1,2,3,4,5,6,7,8,9]
