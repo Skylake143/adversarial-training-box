@@ -26,7 +26,7 @@ if __name__ == "__main__":
         scheduler_gamma=0.98,
         attack_epsilon=0.3, 
         patience_epochs=6, 
-        overhead_delta=0.001,
+        overhead_delta=0.0,
         batch_size=256)
     
     network = MNIST_RELU_4_1024()

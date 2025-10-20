@@ -13,7 +13,7 @@ from adversarial_training_box.adversarial_attack.fgsm_attack import FGSMAttack
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.pipeline.pipeline import Pipeline
-from adversarial_training_box.models.mnist_net_256x2 import MNIST_NET_256x2
+from adversarial_training_box.models.mnist_relu_2_256 import MNIST_NET_256x2
 from adversarial_training_box.pipeline.standard_training_module import StandardTrainingModule
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
@@ -26,7 +26,7 @@ if __name__ == "__main__":
         scheduler_gamma=0.98,
         attack_epsilon=0.3,
         patience_epochs=6,
-        overhead_delta=0.001,
+        overhead_delta=0.0,
         batch_size=256)
     
     network = MNIST_NET_256x2()

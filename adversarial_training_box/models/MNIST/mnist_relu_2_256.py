@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MNIST_NET_256x2(nn.Module):
+class MNIST_RELU_2_256(nn.Module):
     def __init__(self):
-        super(MNIST_NET_256x2, self).__init__()
-        self.name = "mnist_net_256x2"
+        super(MNIST_RELU_2_256, self).__init__()
+        self.name = "mnist_net_2_256"
         self.layer1 = nn.Linear(784, 256)
         self.layer2 = nn.Linear(256, 256)
         self.layer3 = nn.Linear(256, 10)
