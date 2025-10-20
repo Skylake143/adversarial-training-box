@@ -43,7 +43,7 @@ if __name__ == "__main__":
         scheduler_step_size=10,
         scheduler_gamma=0.98,
         attack_epsilon=0.3,
-        patience_epochs=6,
+        patience_epochs=5,
         overhead_delta=0.0,
         batch_size=256)
     
