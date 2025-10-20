@@ -16,6 +16,7 @@ class CNN_SMALL(nn.Module):
             num_classes: int
                 The number of classes we want to predict
         """
+        self.name = "cnn_small"
         super(CNN_SMALL, self).__init__()
         self.conv1 = nn.Sequential(nn.Conv2d(in_channels =1, out_channels=32, kernel_size=5, stride=1, padding=2), nn.ReLU()) # Convolutional layer with 32 filters
         self.fc1 = nn.Linear(32 * input_height * input_width, 128)
