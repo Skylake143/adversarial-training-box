@@ -76,14 +76,7 @@ if __name__ == "__main__":
     training_stack.append((300, StandardTrainingModule(criterion=criterion)))
 
     # Testing modules stack
-    testing_stack = [StandardTestModule(),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.1),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.2),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.3),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.1),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.2),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3),
-    ]
+    testing_stack = [StandardTestModule()]
     
     # Convert complex objects to JSON-serializable format
     def serialize_training_stack(stack):

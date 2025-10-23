@@ -2,7 +2,7 @@ import torch
 
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 class EarlyStopper:
-    def __init__(self, patience: int = 1, delta: float=0):
+    def __init__(self, patience: int = 1, delta: float=0.0):
         self.patience = patience
         self.delta = delta
         self.counter = 0

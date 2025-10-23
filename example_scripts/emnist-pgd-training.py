@@ -15,7 +15,6 @@ from adversarial_training_box.adversarial_attack.fgsm_attack import FGSMAttack
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.pipeline.pipeline import Pipeline
-from adversarial_training_box.models.MNIST.mnist_relu_4_1024 import MNIST_RELU_4_1024
 from adversarial_training_box.pipeline.standard_training_module import StandardTrainingModule
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
@@ -59,9 +58,9 @@ if __name__ == "__main__":
     early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
 
     # Train, validation and test dataset
-    dataset = torchvision.datasets.MNIST('../data', train=True, download=True, transform=torchvision.transforms.ToTensor())
+    dataset = torchvision.datasets.EMNIST('../data',split="balanced", train=True, download=True, transform=torchvision.transforms.ToTensor())
     train_dataset,validation_dataset, = torch.utils.data.random_split(dataset, (0.8, 0.2))
-    test_dataset = torchvision.datasets.MNIST('../data',train=False, download=True, transform=torchvision.transforms.ToTensor())
+    test_dataset = torchvision.datasets.EMNIST('../data', split="balanced",train=False, download=True, transform=torchvision.transforms.ToTensor())
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
@@ -69,14 +68,15 @@ if __name__ == "__main__":
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
 
     # Validation module
-    validation_module = StandardTestModule(criterion=criterion)
+    validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3, criterion=criterion)
 
     # Training modules stack
     training_stack = []
-    training_stack.append((300, StandardTrainingModule(criterion=criterion)))
+    training_stack.append((400, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)))
 
     # Testing modules stack
-    testing_stack = [StandardTestModule(),
+    testing_stack = [
+        StandardTestModule(),
         StandardTestModule(attack=FGSMAttack(), epsilon=0.1),
         StandardTestModule(attack=FGSMAttack(), epsilon=0.2),
         StandardTestModule(attack=FGSMAttack(), epsilon=0.3),
@@ -110,7 +110,7 @@ if __name__ == "__main__":
                                      validation_module=serialize_validation_module(validation_module))
 
     # Setup experiment
-    experiment_tracker = ExperimentTracker(experiment_name, Path("./generated"), login=True)
+    experiment_tracker = ExperimentTracker(f"emnist_{experiment_name}", Path("./generated"), login=True)
     experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
 
