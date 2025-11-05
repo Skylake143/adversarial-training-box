@@ -32,17 +32,14 @@ def reset_last_k_layers(model, k):
 
 def freeze_except_last_k_layers(model, k):
     """Freeze all parameters except the last k layers"""
+    model.requires_grad_(True)
+
     layers = list(model.children())
     
     # Freeze all layers except the last k
     for layer in layers[:-k]:
-        for param in layer.parameters():
-            param.requires_grad = False
-    
-    # Ensure the last k layers are trainable
-    for layer in layers[-k:]:
-        for param in layer.parameters():
-            param.requires_grad = True
+        if hasattr(layer, 'reset_parameters'):
+            layer.requires_grad_(False)
 
 if __name__ == "__main__":
     training_parameters = AttributeDict(
@@ -54,12 +51,30 @@ if __name__ == "__main__":
         patience_epochs=6, 
         overhead_delta=0.0,
         batch_size=256,
-        retraining_layers=2)
+        retraining_layers=1)
     
-    network = CNN_YANG_BIG(47)
+    # Transfer learning parameters
+    source_model_path =Path("generated/BachelorThesisRuns/cnn_yang_big-pgd-training_21-10-2025+12_40/cnn_yang_big.pth")
+    final_model_name = "cnn_yang_big_transferred"
+
+    # Source model
+    source_model = torch.load(source_model_path, map_location='cpu')
+    source_model_copy = copy.deepcopy(source_model)
+
+    # Network converter to adapt to target dataset   
+    # TODO: change to generic function
+    def emnist_cnn_yang_converter(network: CNN_YANG_BIG):
+        network.fc3 = torch.nn.Linear(200, 47)
+        return network
+    
+    converted_model = emnist_cnn_yang_converter(source_model_copy)
+
+    reset_last_k_layers(converted_model, training_parameters.retraining_layers)
+
+    freeze_except_last_k_layers(converted_model, training_parameters.retraining_layers)
 
     # Training configuration
-    optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
+    optimizer = getattr(optim, 'Adam')(converted_model.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
     criterion = nn.CrossEntropyLoss()
     early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
@@ -110,7 +125,7 @@ if __name__ == "__main__":
 
     training_objects = AttributeDict(criterion=str(criterion), 
                                      optimizer=str(optimizer), 
-                                     network=str(network), 
+                                     network=str(converted_model), 
                                      scheduler=str(scheduler), 
                                      training_stack=serialize_training_stack(training_stack),
                                      testing_stack=serialize_testing_stack(testing_stack),
@@ -120,24 +135,6 @@ if __name__ == "__main__":
     experiment_tracker = ExperimentTracker("cnn_yang_big-transfer-learning", Path("./generated"), login=True)
     experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
-    
-    # Transfer learning parameters
-    source_model_path =Path("generated/BachelorThesisRuns/cnn_yang_big-pgd-training_21-10-2025+12_40/cnn_yang_big.pth")
-    final_model_name = "cnn_yang_big_transferred"
-
-    # Source model
-    source_model = torch.load(source_model_path, map_location='cpu')
-    source_model_copy = copy.deepcopy(source_model)
-
-    # Network converter to adapt to target dataset   
-    # TODO: change to generic function
-    def emnist_cnn_yang_converter(network: CNN_YANG_BIG):
-        network.fc3 = torch.nn.Linear(200, 47)
-        return network
-    
-    converted_model = emnist_cnn_yang_converter(source_model_copy)
-
-    # freeze_except_last_k_layers(converted_model, training_parameters.retraining_layers)
     
     # Train
     pipeline.train(train_loader, converted_model, training_stack, early_stopper=early_stopper, 
