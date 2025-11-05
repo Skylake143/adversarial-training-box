@@ -51,7 +51,7 @@ if __name__ == "__main__":
         patience_epochs=6, 
         overhead_delta=0.0,
         batch_size=256,
-        retraining_layers=1)
+        retraining_layers=5)
     
     # Transfer learning parameters
     source_model_path =Path("generated/BachelorThesisRuns/cnn_yang_big-pgd-training_21-10-2025+12_40/cnn_yang_big.pth")
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     # Train
     pipeline.train(train_loader, converted_model, training_stack, early_stopper=early_stopper, 
                    validation_loader=validation_loader,
-                   validation_module=validation_module
+                   validation_module=validation_module, retraining_layers=training_parameters.retraining_layers
                    )
     
     # Test
