@@ -62,7 +62,7 @@ class ExperimentTracker:
         torch_model.to(device)
         return torch_model
     
-    def load_trained_model(self, network_name: str) -> torch.nn.Module:
+    def load_source_model(self, network_path: str) -> torch.nn.Module:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         torch_model = torch.load(self.act_experiment_path / f"{network_name}.pth", map_location=torch.device(device))
         torch_model.to(device)

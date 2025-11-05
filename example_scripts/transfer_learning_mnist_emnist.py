@@ -1,5 +1,6 @@
 from random import shuffle
-import time
+from adversarial_training_box.models.MNIST.cnn_yang_big import CNN_YANG_BIG
+import copy
 import torch
 import torch.optim as optim
 import torchvision
@@ -7,71 +8,78 @@ import torch.nn as nn
 from pathlib import Path
 import optuna
 from optuna.trial import TrialState
-from early_stopping_pytorch import EarlyStopping
-from pytorch_lightning.loggers import WandbLogger
-from onnx2torch import convert
-
-from torchvision import transforms
-import os
-import copy
-
-from adversarial_training_box.datasets.cifar10 import CIFAR10
-from adversarial_training_box.datasets.mnist import MNIST
-from adversarial_training_box.datasets.emnist import EMNIST
+from adversarial_training_box.pipeline.early_stopper import EarlyStopper
 
 from adversarial_training_box.adversarial_attack.pgd_attack import PGDAttack
 from adversarial_training_box.adversarial_attack.fgsm_attack import FGSMAttack
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.pipeline.pipeline import Pipeline
-from adversarial_training_box.models.MNIST.mnist_relu_2_256 import MNIST_RELU_2_256
-from adversarial_training_box.models.MNIST.cnn_yang_big import CNN_YANG_BIG
+from adversarial_training_box.models.emnist_net_256x2 import EMNIST_NET_256x2
 from adversarial_training_box.pipeline.standard_training_module import StandardTrainingModule
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
 
-from adversarial_training_box.pipeline.transfer_learning_pytorch_wrapper import LightningWrapper
+def reset_last_k_layers(model, k):
+    """Reset the parameters of the last k layers of a model"""
+    layers = list(model.children())
+    
+    # Reset the last k layers
+    for layer in layers[-k:]:
+        if hasattr(layer, 'reset_parameters'):
+            layer.reset_parameters()
+    # TODO: investigate for other cases!
 
-def load_pretrained_model(model_name, dataset=False, base_path=Path("../nn-verification-assessment/networks"), convert_func=lambda x: x):
-        """load models from a structure like https://github.com/marti-mcfly/nn-verification-assessment"""
-        if not isinstance(base_path, Path):
-            base_path = Path(base_path)
-
-        if isinstance(dataset, bool) and not dataset:
-            return convert_func(convert((base_path / model_name).with_suffix(".onnx")))
-        elif isinstance(dataset, str):
-            return convert_func(convert((base_path / dataset / model_name).with_suffix(".onnx")))
+def freeze_except_last_k_layers(model, k):
+    """Freeze all parameters except the last k layers"""
+    layers = list(model.children())
+    
+    # Freeze all layers except the last k
+    for layer in layers[:-k]:
+        for param in layer.parameters():
+            param.requires_grad = False
+    
+    # Ensure the last k layers are trainable
+    for layer in layers[-k:]:
+        for param in layer.parameters():
+            param.requires_grad = True
 
 if __name__ == "__main__":
     training_parameters = AttributeDict(
-        learning_rate = 0.002,
-        weight_decay = 1e-5,
-        scheduler_step_size=3,
-        scheduler_gamma=0.96,
+        learning_rate = 0.001,
+        weight_decay = 1e-4,
+        scheduler_step_size=10,
+        scheduler_gamma=0.98,
         attack_epsilon=0.3, 
-        patience_epochs=5, 
-        batch_size=2048,
-        num_workers = 1,
-        split_layer=2)
+        patience_epochs=6, 
+        overhead_delta=0.0,
+        batch_size=256,
+        retraining_layers=2)
     
-    # Datasets
+    network = CNN_YANG_BIG(47)
+
+    # Training configuration
+    optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
+    criterion = nn.CrossEntropyLoss()
+    early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
+
+    # Train, validation and test dataset
+    dataset = torchvision.datasets.EMNIST('../data', split="balanced",train=True, download=True, transform=torchvision.transforms.ToTensor())
+    train_dataset,validation_dataset, = torch.utils.data.random_split(dataset, (0.8, 0.2))
     test_dataset = torchvision.datasets.EMNIST('../data', split="balanced",train=False, download=True, transform=torchvision.transforms.ToTensor())
 
-    # Dataloaders
-    dataloader = EMNIST("adversarial_training_box/datasets", training_parameters.batch_size, download=True, transform=transforms.ToTensor(), num_workers=training_parameters.num_workers)
+   # Dataloaders
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
+    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=1000, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
 
-    # Transfer learning parameters
-    source_model_name = "cnn_yang_big.onnx"
-    source_model_path =Path("generated/BachelorThesisRuns/cnn_yang_big-pgd-training_21-10-2025+12_40")
-    final_model_name = "cnn_yang_big_transferred"
+    # Validation module
+    validation_module = StandardTestModule(criterion=criterion)
 
-    # Setup experiment
-    project = "cnn_yang_big"
-    experiment_tracker = ExperimentTracker("cnn_yang_big-transfer-learning", Path("./generated"), login=True)
-    logger = WandbLogger(project=project)
-    experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters, logger=logger)
-    pipeline = Pipeline(experiment_tracker, training_parameters, criterion=None, optimizer=None, scheduler=None)
+    # Training modules stack
+    training_stack = []
+    training_stack.append((300, StandardTrainingModule(criterion=criterion)))
 
     # Testing modules stack
     testing_stack = [
@@ -84,28 +92,60 @@ if __name__ == "__main__":
         StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3),
     ]
 
-    # Network converter to adapt to target dataset
-    def mnist_relu_2_256_converter(network: MNIST_RELU_2_256):
-        setattr(network, 'layer3/Gemm', torch.nn.Linear(256, 47))
-        return network
+    # Convert complex objects to JSON-serializable format
+    def serialize_training_stack(stack):
+        return [{"epochs": epochs, "module_type": type(module).__name__, 
+                "attack": type(getattr(module, 'attack', None)).__name__ if hasattr(module, 'attack') and module.attack else "None",
+                "epsilon": getattr(module, 'epsilon', None)} for epochs, module in stack]
     
-    def mnist_cnn_yang_converter(network: CNN_YANG_BIG):
-        setattr(network, 'fc3/Gemm', torch.nn.Linear(200, 47))
-        return network
+    def serialize_testing_stack(stack):
+        return [{"module_type": type(module).__name__,
+                "attack": type(getattr(module, 'attack', None)).__name__ if hasattr(module, 'attack') and module.attack else "None",
+                "epsilon": getattr(module, 'epsilon', None)} for module in stack]
     
-    if not isinstance(source_model_name, Path):
-        source_model_name = Path(source_model_name)
+    def serialize_validation_module(module):
+        return {"module_type": type(module).__name__,
+                "attack": type(getattr(module, 'attack', None)).__name__ if hasattr(module, 'attack') and module.attack else "None",
+                "epsilon": getattr(module, 'epsilon', None)}
+
+    training_objects = AttributeDict(criterion=str(criterion), 
+                                     optimizer=str(optimizer), 
+                                     network=str(network), 
+                                     scheduler=str(scheduler), 
+                                     training_stack=serialize_training_stack(training_stack),
+                                     testing_stack=serialize_testing_stack(testing_stack),
+                                     validation_module=serialize_validation_module(validation_module))
+
+    # Setup experiment
+    experiment_tracker = ExperimentTracker("cnn_yang_big-transfer-learning", Path("./generated"), login=True)
+    experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
+    pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
+    
+    # Transfer learning parameters
+    source_model_path =Path("generated/BachelorThesisRuns/cnn_yang_big-pgd-training_21-10-2025+12_40/cnn_yang_big.pth")
+    final_model_name = "cnn_yang_big_transferred"
 
     # Source model
-    source_model = LightningWrapper(load_pretrained_model(source_model_name, False, base_path=source_model_path, convert_func=mnist_cnn_yang_converter), final_model_name)
+    source_model = torch.load(source_model_path, map_location='cpu')
     source_model_copy = copy.deepcopy(source_model)
 
+    # Network converter to adapt to target dataset   
+    # TODO: change to generic function
+    def emnist_cnn_yang_converter(network: CNN_YANG_BIG):
+        network.fc3 = torch.nn.Linear(200, 47)
+        return network
     
-    # Transfer Learning
-    trained_model = pipeline.transfer_learn(source_model=source_model_copy, dataloader=dataloader, split_layer=training_parameters.split_layer, max_epochs=50, logger=logger)
+    converted_model = emnist_cnn_yang_converter(source_model_copy)
+
+    # freeze_except_last_k_layers(converted_model, training_parameters.retraining_layers)
+    
+    # Train
+    pipeline.train(train_loader, converted_model, training_stack, early_stopper=early_stopper, 
+                   validation_loader=validation_loader,
+                   validation_module=validation_module
+                   )
     
     # Test
-    loaded_network = experiment_tracker.load_trained_model("cnn_yang_big_transferred")
-    # TODO: fix that
-    # experiment_tracker.export_to_onnx(network, test_loader)
-    pipeline.test(loaded_network, test_loader, testing_stack=testing_stack)
+    network = experiment_tracker.load_trained_model(converted_model)
+    pipeline.test(network, test_loader, testing_stack=testing_stack)
+    experiment_tracker.export_to_onnx(network, test_loader)
