@@ -6,13 +6,13 @@ import torch.nn.functional as F
 
 class CNN_MADRY_MEDIUM(torch.nn.Module):
 
-    def __init__(self):
+    def __init__(self,num_classes=10):
         self.name = "cnn_madry_medium"
         super(CNN_MADRY_MEDIUM, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, 5, 1, 2)
         self.conv2 = nn.Conv2d(32, 64, 5, 1, 2)
         self.fc1 = nn.Linear(7 * 7 * 64, 1024)
-        self.fc2 = nn.Linear(1024, 10)
+        self.fc2 = nn.Linear(1024, num_classes)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))

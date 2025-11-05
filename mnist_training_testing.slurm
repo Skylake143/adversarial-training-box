@@ -3,20 +3,16 @@
 #SBATCH --mail-user="dp.wuensch@gmail.com"
 #SBATCH --mail-type=ALL
 #SBATCH --time=00:05:00
-#SBATCH --partition=testing         
+#SBATCH --partition=testing
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=12G
-#SBATCH --gres=gpu:tesla_t4:1
-
-# start with a clean module environment OPTIONAL
-# module purge
+#SBATCH --mem=12
+#SBATCH --gres=gpu
 
 #  load modules you need for CUDA & conda
 module load ALICE/default
-module load slurm
 module load CUDA/12.3.2
 module load GCC/11.3.0
 module load Miniconda3/24.7.1-0         # check 'module avail' for correct version
@@ -26,7 +22,6 @@ export CONDA_ENVS_PATH=/home/s3665534/.conda/envs
 export CONDA_PREFIX=/home/s3665534/.conda
 export CUDA_HOME=/easybuild/software/CUDA/12.3.2
 export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:/home/s3665534/.conda/envs/__av__abcrown/lib:$LD_LIBRARY_PATH
 
 # move to project folder
 cd $HOME/adversarial-training-box-FORK
@@ -38,6 +33,6 @@ eval "$(conda shell.bash hook)"
 conda activate adversarial-training-box
 
 # run your training script
-python example_scripts/mnist-net_256x2-pgd-training.py
+python example_scripts/emnist-pgd-training.py --network CNN_SMALL --experiment_name cnn_small-pgd-training
 
 echo "## Job finished. Goodbye"

@@ -150,15 +150,15 @@ echo "## Job finished. Goodbye"
 
 def main():
     submitter = SlurmJobSubmitter()
-    networks = ["MNIST_RELU_4_256", "MNIST_RELU_4_1024"]#, "MNIST_RELU_6_200", "CNN_SMALL","CNN_MADRY_MEDIUM","CNN_YANG_BIG"] #, "MNIST_RELU_5_256", "MNIST_RELU_6_256", 
+    networks = ["CNN_MADRY_MEDIUM","CNN_YANG_BIG"]#"MNIST_RELU_4_256", "MNIST_RELU_4_1024"]#, "MNIST_RELU_6_200", "CNN_SMALL","CNN_MADRY_MEDIUM","CNN_YANG_BIG"] #, "MNIST_RELU_5_256", "MNIST_RELU_6_256", 
     job_configs = []
     
     for network in networks:
         config = SlurmJobConfig(
             job_name=f"mnist_adversarial_{network.lower()}",
             script_path="example_scripts/pgd-training.py",
-            partition="gpu-l4-24g", # gpu-short;gpu-2080ti-11g; gpu-mig-40g; gpu-a100-80g; gpu-l4-24g
-            time_limit="1-08:00:00"
+            partition="gpu-short", # gpu-short;gpu-2080ti-11g; gpu-mig-40g; gpu-a100-80g; gpu-l4-24g
+            time_limit="04:00:00"
         )
         args = f"--network {network} --experiment_name {network.lower()}-pgd-training"
         job_configs.append((config, args))
