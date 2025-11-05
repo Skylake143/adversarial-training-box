@@ -5,12 +5,17 @@ import cpuinfo
 from datetime import datetime
 from collections import deque
 import numpy as np
+import copy
 
+from adversarial_training_box.pipeline.transfer_learning_pytorch_wrapper import LightningWrapper
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
 from adversarial_training_box.pipeline.training_module import TrainingModule
 from adversarial_training_box.pipeline.test_module import TestModule
 
+from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoint, EarlyStopping
+from lightning.pytorch.loggers import WandbLogger
+from pytorch_lightning.trainer import Trainer
 
 class Pipeline:
     def __init__(self, experiment_tracker: ExperimentTracker, training_parameters: AttributeDict, criterion: torch.nn.Module, optimizer: torch.optim, scheduler: torch.optim=None) -> None:
@@ -23,18 +28,14 @@ class Pipeline:
     def save_model(self, network):
         self.experiment_tracker.save_model(network)
 
-    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, validation_loader: torch.utils.data.DataLoader = None, early_stopper = None):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        network.to(device)
-
-        training_starttime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
+    def get_device_info(self):
         if torch.cuda.is_available():
             device_name = torch.cuda.get_device_name(0)
             device_properties = torch.cuda.get_device_properties(0)
             total_memory_gb = device_properties.total_memory / (1024**3) 
             device_type = "GPU"
             device_info = f"{device_type}: {device_name} ({total_memory_gb:.1f} GB VRAM)"
+            return device_info
         else:
             try:
                 cpu_info = cpuinfo.get_cpu_info()
@@ -43,6 +44,15 @@ class Pipeline:
                 cpu_name = platform.processor() or "Unknown CPU"
             device_type = "CPU"
             device_info = f"{device_type}: {cpu_name}"
+            return device_info
+
+    def train(self, train_loader: torch.utils.data.DataLoader, network: torch.nn.Module, training_stack: list[int, TrainingModule], validation_module: TestModule = None, validation_loader: torch.utils.data.DataLoader = None, early_stopper = None):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        network.to(device)
+
+        device_info = self.get_device_info()
+
+        training_starttime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Experiment metrics
         training_time = 0
@@ -161,3 +171,84 @@ class Pipeline:
             class_accuracies.append([classname, round(accuracy, 1)])
 
         self.experiment_tracker.save_class_accuracy_table(class_accuracies)
+
+    def transfer_train(self, data_loader: torch.utils.data.DataLoader, network, max_epochs=1000, logger=None):
+        patience = 8
+
+        # Path(base_path).mkdir(parents=True, exist_ok=True)
+
+        # checkpoint = Path(f"{base_path}/model_checkpoints/{name}")
+        # checkpoint.mkdir(parents=True, exist_ok=True)
+
+        weight_averaging = StochasticWeightAveraging(swa_lrs=1e-2)
+        # checkpointer = ModelCheckpoint(checkpoint, save_top_k=-1, monitor="val_acc")
+        early_stopping = EarlyStopping("val_acc", mode="max", patience=patience)
+
+        trainer = Trainer(logger=logger, gradient_clip_val=0.5,
+                        callbacks=[weight_averaging, early_stopping], max_epochs=max_epochs)
+        
+        trainer.fit(network, data_loader)
+
+        if trainer.current_epoch <= patience + 1:  # vanishing gradients detected
+            print(f"Detected vanishing gradients for model")
+            return None
+        
+        early_stopped = False
+        early_stopping_epoch = 0
+        if trainer.current_epoch < max_epochs:
+            early_stopped = True
+            early_stopping_epoch = trainer.current_epoch
+
+        # trainer.test(network, data_loader)
+
+        # save_path = Path(f"{base_path}/trained_models")
+        # save_path.mkdir(parents=True, exist_ok=True)
+
+        # if inp is None:
+        #     torch.save(network, save_path / name)
+        # else:
+        #     if isinstance(inp, bool) and inp:
+        #         inp = data_loader.dummy_input()
+        #     torch.onnx.export(network, inp, str((save_path / name).with_suffix(".onnx")), export_params=True, do_constant_folding=True)
+
+        return network, early_stopped, early_stopping_epoch
+
+    def transfer_learn(self, source_model, dataloader:torch.utils.data.DataLoader, split_layer, max_epochs=50, logger=None):
+
+        training_starttime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        device_info = self.get_device_info()
+
+        # Transfer Learning
+        # Debug: Check which parameters require gradients
+        print("Parameters requiring gradients:")
+        for name, param in source_model.named_parameters():
+            print(f"{name}: requires_grad={param.requires_grad}")
+        
+        # Create CUDA event objects for timing
+        if torch.cuda.is_available():
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            start_event.record()
+        else: 
+            start_time = time.perf_counter()
+
+        source_model.reset_k_layers(split_layer)
+        print(f"Starting retraining the last {split_layer} layers")
+        source_model.only_train_k_layers(split_layer)
+        trained_model, early_stopped, early_stopping_epoch = self.transfer_train(dataloader,source_model, max_epochs, logger)
+                        
+        if torch.cuda.is_available():
+            end_event.record()
+            torch.cuda.synchronize()
+            duration_ms = start_event.elapsed_time(end_event)
+            training_time = duration_ms / 1000
+        else: 
+            end_time = time.perf_counter()
+            training_time = end_time - start_time
+        
+        self.save_model(trained_model)
+
+        if not self.experiment_tracker is None:
+            self.experiment_tracker.log_training_metrics({"training_time (s)" : training_time, "Retrained layers" : split_layer,"early_stopping" : bool(early_stopped), "early_stopping_epoch" : early_stopping_epoch, "training_start_datetime" : training_starttime, "device_info" : device_info})
+
+        return trained_model

@@ -7,6 +7,8 @@ from onnx2torch import convert
 import json
 
 from adversarial_training_box.database.attribute_dict import AttributeDict
+from pytorch_lightning.loggers import WandbLogger
+
 
 class ExperimentTracker:
     def __init__(self, project: str, base_path: Path, login: bool) -> None:
@@ -15,20 +17,23 @@ class ExperimentTracker:
         self.project = project
         self.project_path = base_path / project 
     
-    def initialize_new_experiment(self, experiment_name: str, training_parameters: AttributeDict):
+    def initialize_new_experiment(self, experiment_name: str, training_parameters: AttributeDict, logger=None):
         now = datetime.now()
         now_string = now.strftime("%d-%m-%Y+%H_%M")
         run_string = f"{experiment_name}_{now_string}"
         self.training_parameters = training_parameters
 
         if self.logged_in:
-            self.run = wandb.init(
-            # set the wandb project where this run will be logged
-            project=self.project,
-            # track hyperparameters and run metadata
-            config=self.training_parameters,
-            name = run_string
-            )
+            if logger is not None:
+                self.run = logger
+            else: 
+                self.run = wandb.init(
+                # set the wandb project where this run will be logged
+                project=self.project,
+                # track hyperparameters and run metadata
+                config=self.training_parameters,
+                name = run_string
+                )
 
         self.experiment_name = run_string
         
@@ -38,6 +43,10 @@ class ExperimentTracker:
             self.act_experiment_path.mkdir(parents=True)
 
         self.save_configuration(self.act_experiment_path, self.training_parameters)
+
+    def get_wandblogger(self):
+        if self.logged_in:
+            wandb_logger = WandbLogger(experiment=self.project)
 
     def save_configuration(self, path: Path, data: dict) -> None:
         data = data
@@ -50,6 +59,12 @@ class ExperimentTracker:
     def load_trained_model(self, network: torch.nn.Module) -> torch.nn.Module:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         torch_model = torch.load(self.act_experiment_path / f"{network.name}.pth", map_location=torch.device(device))
+        torch_model.to(device)
+        return torch_model
+    
+    def load_trained_model(self, network_name: str) -> torch.nn.Module:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        torch_model = torch.load(self.act_experiment_path / f"{network_name}.pth", map_location=torch.device(device))
         torch_model.to(device)
         return torch_model
     
