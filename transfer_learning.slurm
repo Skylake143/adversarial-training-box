@@ -9,7 +9,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=12G
-#SBATCH --gres=gpu:1        # 4g.40gb:1; a100; l4
+#SBATCH --gres=gpu:l4:1        # 4g.40gb:1; a100; l4
 
 #  load modules you need for CUDA & conda
 module load ALICE/default
