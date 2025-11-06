@@ -49,7 +49,7 @@ if __name__ == "__main__":
     
     experiment_name = args.experiment_name
     NetworkClass = get_network_class(args.network)
-    network = NetworkClass()
+    network = NetworkClass(47)
 
     # Training configuration
     optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)

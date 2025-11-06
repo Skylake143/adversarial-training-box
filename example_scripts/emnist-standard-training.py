@@ -50,7 +50,7 @@ if __name__ == "__main__":
     
     experiment_name = args.experiment_name
     NetworkClass = get_network_class(args.network)
-    network = NetworkClass()
+    network = NetworkClass(47)
 
     # Training configuration
     optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
@@ -59,9 +59,9 @@ if __name__ == "__main__":
     early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
 
     # Train, validation and test dataset
-    dataset = torchvision.datasets.MNIST('../data', train=True, download=True, transform=torchvision.transforms.ToTensor())
+    dataset = torchvision.datasets.EMNIST('../data',split="balanced", train=True, download=True, transform=torchvision.transforms.ToTensor())
     train_dataset,validation_dataset, = torch.utils.data.random_split(dataset, (0.8, 0.2))
-    test_dataset = torchvision.datasets.MNIST('../data',train=False, download=True, transform=torchvision.transforms.ToTensor())
+    test_dataset = torchvision.datasets.EMNIST('../data', split="balanced",train=False, download=True, transform=torchvision.transforms.ToTensor())
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)

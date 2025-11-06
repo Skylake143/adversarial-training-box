@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class CNN_SMALL(nn.Module):
-    def __init__(self, input_height=28, input_width=28, num_classes=10):
+    def __init__(self, num_classes=10):
         """
         Basic convolutional neural network with a convultional connection and a linear connection
             input layer: 1 for loading the whole image
@@ -19,7 +19,7 @@ class CNN_SMALL(nn.Module):
         self.name = "cnn_small"
         super(CNN_SMALL, self).__init__()
         self.conv1 = nn.Sequential(nn.Conv2d(in_channels =1, out_channels=32, kernel_size=5, stride=1, padding=2), nn.ReLU()) # Convolutional layer with 32 filters
-        self.fc1 = nn.Linear(32 * input_height * input_width, 128)
+        self.fc1 = nn.Linear(32 * 28 * 28, 128)
         self.fcoutput = nn.Linear(128, num_classes)
 
     def forward(self, x):
