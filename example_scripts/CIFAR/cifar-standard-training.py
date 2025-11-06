@@ -26,6 +26,8 @@ def get_network_class(network_name):
         'resnet18': ('resnet', 'resnet18'),
         'resnet34': ('resnet', 'resnet34'),
         'resnet50': ('resnet', 'resnet50'),
+        'resnet101': ('resnet', 'resnet101'),
+        'resnet152': ('resnet', 'resnet152'),
         'densenet121': ('densenet', 'densenet121'),
         'densenet169': ('densenet', 'densenet169'),
         'densenet201': ('densenet', 'densenet201'),
@@ -80,15 +82,32 @@ if __name__ == "__main__":
     # Train, validation and test dataset
     if args.dataset == 'cifar10':
         num_classes = 10
-        dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=train_transform)
-        train_dataset, validation_dataset = torch.utils.data.random_split(dataset, (0.8, 0.2))
+        full_train_dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=train_transform)
+        full_validation_dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=test_transform)
+        train_size = int(0.8 * len(full_train_dataset))
+        val_size = len(full_train_dataset) - train_size
+        generator = torch.Generator().manual_seed(42)
+        
+        # Split with same indices for both
+        train_dataset, _ = torch.utils.data.random_split(full_train_dataset, [train_size, val_size], generator=generator)
+        _, validation_dataset = torch.utils.data.random_split(full_validation_dataset, [train_size, val_size], generator=generator)
+    
         test_dataset = torchvision.datasets.CIFAR10('./data', train=False, download=True, transform=test_transform)
 
     elif args.dataset == 'cifar100':
         num_classes = 100
-        dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=train_transform)
-        train_dataset, validation_dataset = torch.utils.data.random_split(dataset, (0.8, 0.2))
+        full_train_dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=train_transform)
+        full_validation_dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=test_transform)
+        train_size = int(0.8 * len(full_train_dataset))
+        val_size = len(full_train_dataset) - train_size
+        generator = torch.Generator().manual_seed(42)
+        
+        # Split with same indices for both
+        train_dataset, _ = torch.utils.data.random_split(full_train_dataset, [train_size, val_size], generator=generator)
+        _, validation_dataset = torch.utils.data.random_split(full_validation_dataset, [train_size, val_size], generator=generator)
+    
         test_dataset = torchvision.datasets.CIFAR100('./data', train=False, download=True, transform=test_transform)
+
 
     experiment_name = args.experiment_name
     network_function = get_network_class(args.network)
@@ -96,8 +115,8 @@ if __name__ == "__main__":
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
-    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=1000, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)    
+    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=512, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=512, shuffle=True)    
 
     # Training configuration
     optimizer = getattr(optim, 'SGD')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay, momentum=training_parameters.momentum)
