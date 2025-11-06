@@ -45,8 +45,9 @@ class wide_basic(nn.Module):
 
 class Wide_ResNet(nn.Module):
     """ WideResNet implementation taken from https://github.com/bmsookim/wide-resnet.pytorch/blob/master/networks/wide_resnet.py """
-    def __init__(self, depth, widen_factor, dropout_rate, num_classes, input_channels=3):
+    def __init__(self, depth, widen_factor, dropout_rate, num_classes, input_channels=3, name="wide_resnet"):
         super(Wide_ResNet, self).__init__()
+        self.name = name
         self.in_planes = 16
 
         assert ((depth-4)%6 ==0), 'Wide-resnet depth should be 6n+4'
@@ -88,11 +89,11 @@ class Wide_ResNet(nn.Module):
 
         return out
     
-def wideresnet_28_10():
-    return Wide_ResNet(depth=28, widen_factor=10, dropout_rate=0.3, num_classes=10, input_channels=1)
+def wideresnet_28_10(num_classes=10):
+    return Wide_ResNet(depth=28, widen_factor=10, dropout_rate=0.3, num_classes=num_classes, input_channels=1, name="wideresnet_28_10")
 
-def wideresnet_32_10():
-    return Wide_ResNet(depth=32, widen_factor=10, dropout_rate=0.3, num_classes=10, input_channels=1)
+def wideresnet_32_10(num_classes=10):
+    return Wide_ResNet(depth=32, widen_factor=10, dropout_rate=0.3, num_classes=num_classes, input_channels=1, name="wideresnet_32_10")
 
-def wideresnet_34_10():
-    return Wide_ResNet(depth=34, widen_factor=10, dropout_rate=0.3, num_classes=10, input_channels=1)
+def wideresnet_34_10(num_classes=10):
+    return Wide_ResNet(depth=34, widen_factor=10, dropout_rate=0.3, num_classes=num_classes, input_channels=1, name="wideresnet_34_10")
