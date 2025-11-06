@@ -84,11 +84,11 @@ if __name__ == "__main__":
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
 
     # Validation module
-    validation_module = StandardTestModule(criterion=criterion)
+    validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3, criterion=criterion)
 
     # Training modules stack
     training_stack = []
-    training_stack.append((300, StandardTrainingModule(criterion=criterion)))
+    training_stack.append((400, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)))
 
     # Testing modules stack
     testing_stack = [StandardTestModule(),

@@ -155,12 +155,12 @@ def main():
     
     for network in networks:
         config = SlurmJobConfig(
-            job_name=f"cifar_standard_{network.lower()}",
-            script_path="example_scripts/CIFAR/cifar-standard-training.py",
+            job_name=f"cifar100_pgd_{network.lower()}",
+            script_path="example_scripts/CIFAR/cifar100-pgd-training.py",
             partition="gpu-short", # gpu-short;gpu-2080ti-11g; gpu-mig-40g; gpu-a100-80g; gpu-l4-24g
             time_limit="04:00:00"
         )
-        args = f"--network {network} --experiment_name cifar-{network.lower()}-standard-training"
+        args = f"--network {network} --experiment_name cifar100-{network.lower()}-pgd-training"
         job_configs.append((config, args))
     
     job_ids = submitter.submit_multiple_jobs(job_configs, delay_seconds=1, dry_run=False)

@@ -65,7 +65,7 @@ if __name__ == "__main__":
     
     experiment_name = args.experiment_name
     network_function = get_network_class(args.network)
-    network = network_function(num_classes=10)
+    network = network_function(num_classes=100)
 
     # Training configuration
     optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
@@ -74,9 +74,9 @@ if __name__ == "__main__":
     early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
 
     # Train, validation and test dataset
-    dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=torchvision.transforms.ToTensor())
+    dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=torchvision.transforms.ToTensor())
     train_dataset, validation_dataset = torch.utils.data.random_split(dataset, (0.8, 0.2))
-    test_dataset = torchvision.datasets.CIFAR10('./data', train=False, download=True, transform=torchvision.transforms.ToTensor())
+    test_dataset = torchvision.datasets.CIFAR100('./data', train=False, download=True, transform=torchvision.transforms.ToTensor())
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
@@ -84,11 +84,11 @@ if __name__ == "__main__":
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
 
     # Validation module
-    validation_module = StandardTestModule(criterion=criterion)
+    validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3, criterion=criterion)
 
     # Training modules stack
     training_stack = []
-    training_stack.append((300, StandardTrainingModule(criterion=criterion)))
+    training_stack.append((400, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)))
 
     # Testing modules stack
     testing_stack = [StandardTestModule(),

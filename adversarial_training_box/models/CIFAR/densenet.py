@@ -64,8 +64,9 @@ class Transition(nn.Module):
 #B stands for bottleneck layer(BN-RELU-CONV(1x1)-BN-RELU-CONV(3x3))
 #C stands for compression factor(0<=theta<=1)
 class DenseNet(nn.Module):
-    def __init__(self, block, nblocks, growth_rate=12, reduction=0.5, num_class=100):
+    def __init__(self, block, nblocks, growth_rate=12, reduction=0.5, num_class=100, name = "densenet"):
         super().__init__()
+        self.name = name
         self.growth_rate = growth_rate
 
         #"""Before entering the first dense block, a convolution
