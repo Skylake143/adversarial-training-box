@@ -88,11 +88,11 @@ class Wide_ResNet(nn.Module):
 
         return out
     
-def wideresnet_28_10():
-    return Wide_ResNet(depth=28, widen_factor=10, dropout_rate=0.3, num_classes=10, input_channels=1)
+def wideresnet_28_10(num_classes=10):
+    return Wide_ResNet(depth=28, widen_factor=10, dropout_rate=0.3, num_classes=num_classes, input_channels=1)
 
-def wideresnet_32_10():
-    return Wide_ResNet(depth=32, widen_factor=10, dropout_rate=0.3, num_classes=10, input_channels=1)
+def wideresnet_32_10(num_classes=10):
+    return Wide_ResNet(depth=32, widen_factor=10, dropout_rate=0.3, num_classes=num_classes, input_channels=1)
 
-def wideresnet_34_10():
-    return Wide_ResNet(depth=34, widen_factor=10, dropout_rate=0.3, num_classes=10, input_channels=1)
+def wideresnet_34_10(num_classes=10):
+    return Wide_ResNet(depth=34, widen_factor=10, dropout_rate=0.3, num_classes=num_classes, input_channels=1)

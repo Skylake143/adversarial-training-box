@@ -116,14 +116,14 @@ class DenseNet(nn.Module):
             in_channels += self.growth_rate
         return dense_block
 
-def densenet121():
-    return DenseNet(Bottleneck, [6,12,24,16], growth_rate=32)
+def densenet121(num_classes=10):
+    return DenseNet(Bottleneck, [6,12,24,16], growth_rate=32, num_class=num_classes)
 
-def densenet169():
-    return DenseNet(Bottleneck, [6,12,32,32], growth_rate=32)
+def densenet169(num_classes=10):
+    return DenseNet(Bottleneck, [6,12,32,32], growth_rate=32,num_class=num_classes)
 
-def densenet201():
-    return DenseNet(Bottleneck, [6,12,48,32], growth_rate=32)
+def densenet201(num_classes=10):
+    return DenseNet(Bottleneck, [6,12,48,32], growth_rate=32,num_class=num_classes)
 
-def densenet161():
-    return DenseNet(Bottleneck, [6,12,36,24], growth_rate=48)
+def densenet161(num_classes=10):
+    return DenseNet(Bottleneck, [6,12,36,24], growth_rate=48,num_class=num_classes)
