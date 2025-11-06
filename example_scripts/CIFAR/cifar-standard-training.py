@@ -1,7 +1,9 @@
 from random import shuffle
 import torch
 import torch.optim as optim
+from torch.optim.lr_scheduler import MultiStepLR
 import torchvision
+from torchvision import transforms
 import torch.nn as nn
 from pathlib import Path
 import optuna
@@ -51,44 +53,64 @@ if __name__ == "__main__":
                        help='Network architecture name')
     parser.add_argument('--experiment_name', type=str, default=None,
                        help='Custom experiment name (default: {network}-standard-training)')
+    parser.add_argument('--dataset', type=str, default='cifar10')
     args = parser.parse_args()  # Add this line to actually parse the arguments
 
     training_parameters = AttributeDict(
-        learning_rate = 0.001,
-        weight_decay = 1e-4,
-        scheduler_step_size=10,
-        scheduler_gamma=0.98,
+        learning_rate = 0.1,
+        weight_decay = 5e-4,
+        momentum = 0.9,
+        scheduler_milestones=[60, 120, 160],
+        scheduler_gamma=0.2,
         attack_epsilon=0.3,
         patience_epochs=6,
         overhead_delta=0.0,
         batch_size=256)
     
+    normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]], std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
+    train_transform = transforms.Compose([])
+
+    train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
+    train_transform.transforms.append(transforms.RandomHorizontalFlip())
+
+    train_transform.transforms.append(transforms.ToTensor())
+    train_transform.transforms.append(normalize)
+    test_transform = transforms.Compose([transforms.ToTensor(), normalize])
+    
+    # Train, validation and test dataset
+    if args.dataset == 'cifar10':
+        num_classes = 10
+        dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=train_transform)
+        train_dataset, validation_dataset = torch.utils.data.random_split(dataset, (0.8, 0.2))
+        test_dataset = torchvision.datasets.CIFAR10('./data', train=False, download=True, transform=test_transform)
+
+    elif args.dataset == 'cifar100':
+        num_classes = 100
+        dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=train_transform)
+        train_dataset, validation_dataset = torch.utils.data.random_split(dataset, (0.8, 0.2))
+        test_dataset = torchvision.datasets.CIFAR100('./data', train=False, download=True, transform=test_transform)
+
     experiment_name = args.experiment_name
     network_function = get_network_class(args.network)
-    network = network_function(num_classes=10)
-
-    # Training configuration
-    optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
-    criterion = nn.CrossEntropyLoss()
-    early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
-
-    # Train, validation and test dataset
-    dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=torchvision.transforms.ToTensor())
-    train_dataset, validation_dataset = torch.utils.data.random_split(dataset, (0.8, 0.2))
-    test_dataset = torchvision.datasets.CIFAR10('./data', train=False, download=True, transform=torchvision.transforms.ToTensor())
+    network = network_function(num_classes=num_classes)
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
     validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=1000, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)    
+
+    # Training configuration
+    optimizer = getattr(optim, 'SGD')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay, momentum=training_parameters.momentum)
+    scheduler = MultiStepLR(optimizer, milestones=training_parameters.scheduler_milestones, gamma=training_parameters.scheduler_gamma)
+    criterion = nn.CrossEntropyLoss()
+    early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
 
     # Validation module
     validation_module = StandardTestModule(criterion=criterion)
 
     # Training modules stack
     training_stack = []
-    training_stack.append((300, StandardTrainingModule(criterion=criterion)))
+    training_stack.append((200, StandardTrainingModule(criterion=criterion)))
 
     # Testing modules stack
     testing_stack = [StandardTestModule(),
