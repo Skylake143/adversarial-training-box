@@ -157,7 +157,7 @@ if __name__ == "__main__":
 
     # Setup experiment
     experiment_tracker = ExperimentTracker("cnn_yang_big-transfer-learning", Path("./generated"), login=True)
-    experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
+    experiment_tracker.initialize_new_experiment(f"TL{training_parameters.retraining_layers}", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
     
     # Train
