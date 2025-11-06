@@ -23,6 +23,12 @@ from adversarial_training_box.adversarial_attack.auto_attack_module import AutoA
 def reset_last_k_layers(model, k):
     """Reset the parameters of the last k layers of a model"""
     layers = list(model.children())
+
+    if k > len(layers):
+        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(layers)})")
+    
+    if k <= 0:
+        return  # Nothing to reset
     
     # Reset the last k layers
     for layer in layers[-k:]:
@@ -36,6 +42,16 @@ def freeze_except_last_k_layers(model, k):
 
     layers = list(model.children())
     
+    if k > len(layers):
+        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(layers)})")
+    
+    if k <= 0:
+        # If k is 0 or negative, freeze all layers
+        for layer in layers:
+            if hasattr(layer, 'reset_parameters'):
+                layer.requires_grad_(False)
+        return
+
     # Freeze all layers except the last k
     for layer in layers[:-k]:
         if hasattr(layer, 'reset_parameters'):
@@ -51,7 +67,7 @@ if __name__ == "__main__":
         patience_epochs=6, 
         overhead_delta=0.0,
         batch_size=256,
-        retraining_layers=5)
+        retraining_layers=0)
     
     # Transfer learning parameters
     source_model_path =Path("generated/BachelorThesisRuns/cnn_yang_big-pgd-training_21-10-2025+12_40/cnn_yang_big.pth")
@@ -61,13 +77,21 @@ if __name__ == "__main__":
     source_model = torch.load(source_model_path, map_location='cpu')
     source_model_copy = copy.deepcopy(source_model)
 
-    # Network converter to adapt to target dataset   
-    # TODO: change to generic function
-    def emnist_cnn_yang_converter(network: CNN_YANG_BIG):
-        network.fc3 = torch.nn.Linear(200, 47)
+    def convert_last_layer(network, num_classes=47):
+        layers = list(network.named_modules())
+        last_layer_name = layers[-1][0]
+        last_layer_module = layers[-1][1]
+
+        in_features = last_layer_module.in_features
+        has_bias = last_layer_module.bias is not None
+        new_layer = torch.nn.Linear(in_features, num_classes, bias=has_bias)
+
+        # Replace the last layer in the network
+        setattr(network, last_layer_name, new_layer)
+        
         return network
-    
-    converted_model = emnist_cnn_yang_converter(source_model_copy)
+
+    converted_model = convert_last_layer(source_model_copy)
 
     reset_last_k_layers(converted_model, training_parameters.retraining_layers)
 
