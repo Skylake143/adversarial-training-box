@@ -10,6 +10,7 @@ class StandardTrainingModule(TrainingModule):
         self.criterion = criterion
         self.attack = attack
         self.epsilon = epsilon
+        self.max_grad_norm = 1.0
 
 
     def train(self, data_loader: torch.utils.data.DataLoader, network: torch.nn.Module, optimizer: torch.optim, experiment_tracker: ExperimentTracker = None) -> float:
@@ -35,8 +36,18 @@ class StandardTrainingModule(TrainingModule):
             # Forward pass
             output = network(training_data)
             loss = self.criterion(output, target)
+
+            # Check for NaN/Inf loss
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"Warning: Invalid loss detected at batch {batch_idx}: {loss.item()}")
+                continue
+
             # Backward pass
             loss.backward()
+
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(network.parameters(), self.max_grad_norm)
+
             # Update model
             optimizer.step()
 

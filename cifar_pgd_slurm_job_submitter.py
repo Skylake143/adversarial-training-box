@@ -52,7 +52,7 @@ class SlurmJobSubmitter:
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={config.cpus_per_task}
 #SBATCH --mem={config.memory}
-#SBATCH --gres=gpu:l4:{config.gpus}
+#SBATCH --gres=gpu:{config.gpus}
 {additional_params_str}
 # Load required modules
 module load ALICE/default
@@ -155,12 +155,12 @@ def main():
     
     for network in networks:
         config = SlurmJobConfig(
-            job_name=f"cifar_pgd_{network.lower()}",
+            job_name=f"cifar100_pgd_{network.lower()}",
             script_path="example_scripts/CIFAR/cifar-pgd-training.py",
-            partition="gpu-short", # gpu-short;gpu-2080ti-11g; gpu-mig-40g; gpu-a100-80g; gpu-l4-24g
-            time_limit="04:00:00"
+            partition="gpu-l4-24g", # gpu-short;gpu-2080ti-11g; gpu-mig-40g; gpu-a100-80g; gpu-l4-24g
+            time_limit="3-10:05:00"
         )
-        args = f"--network {network} --experiment_name cifar-{network.lower()}-pgd-training"
+        args = f"--network {network} --experiment_name cifar100-{network.lower()}-pgd-training --dataset cifar100"
         job_configs.append((config, args))
     
     job_ids = submitter.submit_multiple_jobs(job_configs, delay_seconds=1, dry_run=False)

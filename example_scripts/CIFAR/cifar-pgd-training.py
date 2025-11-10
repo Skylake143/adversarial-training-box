@@ -1,7 +1,9 @@
 from random import shuffle
 import torch
 import torch.optim as optim
+from torch.optim.lr_scheduler import MultiStepLR
 import torchvision
+from torchvision import transforms
 import torch.nn as nn
 from pathlib import Path
 import optuna
@@ -24,6 +26,8 @@ def get_network_class(network_name):
         'resnet18': ('resnet', 'resnet18'),
         'resnet34': ('resnet', 'resnet34'),
         'resnet50': ('resnet', 'resnet50'),
+        'resnet101': ('resnet', 'resnet101'),
+        'resnet152': ('resnet', 'resnet152'),
         'densenet121': ('densenet', 'densenet121'),
         'densenet169': ('densenet', 'densenet169'),
         'densenet201': ('densenet', 'densenet201'),
@@ -50,54 +54,109 @@ if __name__ == "__main__":
     parser.add_argument('--network', type=str, default=None,
                        help='Network architecture name')
     parser.add_argument('--experiment_name', type=str, default=None,
-                       help='Custom experiment name (default: {network}-standard-training)')
+                       help='Custom experiment name (default: {network}-pgd-training)')
+    parser.add_argument('--dataset', type=str, default='cifar10')
     args = parser.parse_args()  # Add this line to actually parse the arguments
 
     training_parameters = AttributeDict(
-        learning_rate = 0.001,
-        weight_decay = 1e-4,
-        scheduler_step_size=10,
-        scheduler_gamma=0.98,
-        attack_epsilon=0.3,
+        learning_rate = 0.1,
+        weight_decay = 5e-4,
+        momentum = 0.9,
+        scheduler_milestones=[60, 120, 160],
+        scheduler_gamma=0.2,
+        attack_epsilon=8/255,
         patience_epochs=6,
         overhead_delta=0.0,
         batch_size=256)
     
+    if args.dataset == 'cifar10':
+        cifar_mean = [0.4914, 0.4822, 0.4465]
+        cifar_std = [0.2470, 0.2435, 0.2616]
+        
+        normalize = transforms.Normalize(mean=cifar_mean,std=cifar_std)
+
+        mean_std = sum(cifar_std) / len(cifar_std)
+
+        train_transform = transforms.Compose([])
+        train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
+        train_transform.transforms.append(transforms.RandomHorizontalFlip())
+        train_transform.transforms.append(transforms.ToTensor())
+        train_transform.transforms.append(normalize)
+        
+        test_transform = transforms.Compose([transforms.ToTensor(), normalize])
+
+        num_classes = 10
+        full_train_dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=train_transform)
+        full_validation_dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=test_transform)
+        train_size = int(0.8 * len(full_train_dataset))
+        val_size = len(full_train_dataset) - train_size
+        generator = torch.Generator().manual_seed(42)
+        
+        # Split with same indices for both
+        train_dataset, _ = torch.utils.data.random_split(full_train_dataset, [train_size, val_size], generator=generator)
+        _, validation_dataset = torch.utils.data.random_split(full_validation_dataset, [train_size, val_size], generator=generator)
+    
+        test_dataset = torchvision.datasets.CIFAR10('./data', train=False, download=True, transform=test_transform)
+
+    elif args.dataset == 'cifar100':
+        cifar_mean = [0.5071, 0.4865, 0.4409]
+        cifar_std = [0.2673, 0.2564, 0.2762]
+        
+        normalize = transforms.Normalize(mean=cifar_mean,std=cifar_std)
+
+        mean_std = sum(cifar_std) / len(cifar_std)
+
+        train_transform = transforms.Compose([])
+        train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
+        train_transform.transforms.append(transforms.RandomHorizontalFlip())
+        train_transform.transforms.append(transforms.ToTensor())
+        train_transform.transforms.append(normalize)
+        
+        test_transform = transforms.Compose([transforms.ToTensor(), normalize])
+
+        num_classes = 100
+        full_train_dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=train_transform)
+        full_validation_dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=test_transform)
+        train_size = int(0.8 * len(full_train_dataset))
+        val_size = len(full_train_dataset) - train_size
+        generator = torch.Generator().manual_seed(43)
+        
+        # Split with same indices for both
+        train_dataset, _ = torch.utils.data.random_split(full_train_dataset, [train_size, val_size], generator=generator)
+        _, validation_dataset = torch.utils.data.random_split(full_validation_dataset, [train_size, val_size], generator=generator)
+    
+        test_dataset = torchvision.datasets.CIFAR100('./data', train=False, download=True, transform=test_transform)
+
     experiment_name = args.experiment_name
     network_function = get_network_class(args.network)
-    network = network_function(num_classes=10)
-
-    # Training configuration
-    optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
-    criterion = nn.CrossEntropyLoss()
-    early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
-
-    # Train, validation and test dataset
-    dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=torchvision.transforms.ToTensor())
-    train_dataset, validation_dataset = torch.utils.data.random_split(dataset, (0.8, 0.2))
-    test_dataset = torchvision.datasets.CIFAR10('./data', train=False, download=True, transform=torchvision.transforms.ToTensor())
+    network = network_function(num_classes=num_classes)
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
-    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=1000, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
+    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=512, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=512, shuffle=True)
 
+    # Training configuration
+    optimizer = getattr(optim, 'SGD')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay, momentum=training_parameters.momentum)
+    scheduler = MultiStepLR(optimizer, milestones=training_parameters.scheduler_milestones, gamma=training_parameters.scheduler_gamma)
+    criterion = nn.CrossEntropyLoss()
+    early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
+    
     # Validation module
-    validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3, criterion=criterion)
+    validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=8/255/mean_std/4, number_iterations=20, random_init=True), epsilon=training_parameters.attack_epsilon/mean_std, criterion=criterion)
 
     # Training modules stack
     training_stack = []
-    training_stack.append((400, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)))
+    training_stack.append((200, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=8/255/mean_std/4, number_iterations=7, random_init=True), epsilon=training_parameters.attack_epsilon/mean_std)))
 
     # Testing modules stack
     testing_stack = [StandardTestModule(),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.1),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.2),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.3),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.1),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.2),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3),
+        StandardTestModule(attack=FGSMAttack(), epsilon=2/255/mean_std),
+        StandardTestModule(attack=FGSMAttack(), epsilon=4/255/mean_std),
+        StandardTestModule(attack=FGSMAttack(), epsilon=8/255/mean_std),
+        StandardTestModule(attack=PGDAttack(epsilon_step_size=2/255/mean_std/4, number_iterations=20, random_init=True), epsilon=2/255/mean_std),
+        StandardTestModule(attack=PGDAttack(epsilon_step_size=4/255/mean_std/4, number_iterations=20, random_init=True), epsilon=4/255/mean_std),
+        StandardTestModule(attack=PGDAttack(epsilon_step_size=8/255/mean_std/4, number_iterations=20, random_init=True), epsilon=8/255/mean_std),
     ]
     
     # Convert complex objects to JSON-serializable format
