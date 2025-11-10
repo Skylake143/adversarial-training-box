@@ -122,6 +122,7 @@ class Pipeline:
             training_time = end_time - start_time
         
         if not self.experiment_tracker is None:
+            self.experiment_tracker.log_train_accuracies({"Train Accuracy" : train_accuracy, "Train Robust Accuracy" : robust_accuracy, "Validation Accuracy" : validation_accuracy, "Validation Robust Accuracy" : validation_robust_accuracy})
             self.experiment_tracker.log_training_metrics({"training_time (s)" : training_time, "early_stopping" : bool(early_stopping), "early_stopping_epoch" : early_stopping_epoch, "training_start_datetime" : training_starttime, "device_info" : device_info})
 
     def test(self, network: torch.nn.Module, test_loader: torch.utils.data.DataLoader, testing_stack: list[TestModule]):

@@ -1,7 +1,9 @@
 from random import shuffle
 import torch
 import torch.optim as optim
+from torch.optim.lr_scheduler import MultiStepLR
 import torchvision
+from torchvision import transforms
 import torch.nn as nn
 from pathlib import Path
 import optuna
@@ -120,9 +122,15 @@ if __name__ == "__main__":
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
-    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=1000, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
+    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=512, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=512, shuffle=True)
 
+    # Training configuration
+    optimizer = getattr(optim, 'SGD')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay, momentum=training_parameters.momentum)
+    scheduler = MultiStepLR(optimizer, milestones=training_parameters.scheduler_milestones, gamma=training_parameters.scheduler_gamma)
+    criterion = nn.CrossEntropyLoss()
+    early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
+    
     # Validation module
     validation_module = StandardTestModule(criterion=criterion)
 
@@ -132,12 +140,12 @@ if __name__ == "__main__":
 
     # Testing modules stack
     testing_stack = [StandardTestModule(),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.1),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.2),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.3),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.1),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.2),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3),
+        StandardTestModule(attack=FGSMAttack(), epsilon=2/255/mean_std),
+        StandardTestModule(attack=FGSMAttack(), epsilon=4/255/mean_std),
+        StandardTestModule(attack=FGSMAttack(), epsilon=8/255/mean_std),
+        StandardTestModule(attack=PGDAttack(epsilon_step_size=2/255/mean_std/4, number_iterations=20, random_init=True), epsilon=2/255/mean_std),
+        StandardTestModule(attack=PGDAttack(epsilon_step_size=4/255/mean_std/4, number_iterations=20, random_init=True), epsilon=4/255/mean_std),
+        StandardTestModule(attack=PGDAttack(epsilon_step_size=8/255/mean_std/4, number_iterations=20, random_init=True), epsilon=8/255/mean_std),
     ]
     
     # Convert complex objects to JSON-serializable format

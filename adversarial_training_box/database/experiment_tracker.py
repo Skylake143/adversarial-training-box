@@ -95,6 +95,20 @@ class ExperimentTracker:
        columns = ["class", "accuracy",]
        table = wandb.Table(data=data, columns=columns)
        wandb.log({"class_wise_accuracy" : table})
+    
+    def log_train_accuracies(self, training_metric: dict): 
+        """Save final train and validation accuracies to local file and to wandb"""
+        result_df_path = self.act_experiment_path / "train_accuracies.csv"
+        if result_df_path.exists():
+            df = pd.read_csv(result_df_path, index_col=0)
+            df.loc[len(df.index)] = training_metric
+        else:
+            df = pd.DataFrame([training_metric])
+        df.to_csv(result_df_path)
+
+        if self.logged_in:
+            table = wandb.Table(dataframe=df)
+            wandb.log({"train_accuracies" : table})
 
     def log_training_metrics(self, training_metric: dict): 
         """Save training time and other training metrics to local file and to wandb"""
