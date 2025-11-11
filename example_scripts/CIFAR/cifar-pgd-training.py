@@ -31,10 +31,8 @@ def get_network_class(network_name):
         'densenet121': ('densenet', 'densenet121'),
         'densenet169': ('densenet', 'densenet169'),
         'densenet201': ('densenet', 'densenet201'),
-        'densenet161': ('densenet', 'densenet161'),
-        'wideresnet28': ('wideresnet', 'wideresnet28'),
-        'wideresnet34': ('wideresnet', 'wideresnet34'),
-        'wideresnet40': ('wideresnet', 'wideresnet40')
+        'wideresnet_28_10': ('wideresnet', 'wideresnet_28_10'),
+        'wideresnet_34_10': ('wideresnet', 'wideresnet_34_10'),
     }
     
     network_lower = network_name.lower()
@@ -65,9 +63,9 @@ if __name__ == "__main__":
         scheduler_milestones=[60, 120, 160],
         scheduler_gamma=0.2,
         attack_epsilon=8/255,
-        patience_epochs=6,
+        patience_epochs=8,
         overhead_delta=0.0,
-        batch_size=256)
+        batch_size=128)
     
     if args.dataset == 'cifar10':
         cifar_mean = [0.4914, 0.4822, 0.4465]
@@ -185,7 +183,7 @@ if __name__ == "__main__":
 
     # Setup experiment
     experiment_tracker = ExperimentTracker(experiment_name, Path("./generated"), login=True)
-    experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
+    experiment_tracker.initialize_new_experiment("BARun", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
 
     # Train

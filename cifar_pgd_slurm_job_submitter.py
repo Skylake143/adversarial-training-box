@@ -150,7 +150,7 @@ echo "## Job finished. Goodbye"
 
 def main():
     submitter = SlurmJobSubmitter()
-    networks = ["resnet18"] # "MNIST_RELU_4_256", "MNIST_RELU_4_1024"]#, "MNIST_RELU_6_200", "CNN_SMALL","CNN_MADRY_MEDIUM","CNN_YANG_BIG"] #, "MNIST_RELU_5_256", "MNIST_RELU_6_256", 
+    networks = ["resnet18", "resnet34", "resnet50", "resnet101", "densenet121", "densenet169", "wideresnet_28_10", "wideresnet_34_10"] # "MNIST_RELU_4_256", "MNIST_RELU_4_1024"]#, "MNIST_RELU_6_200", "CNN_SMALL","CNN_MADRY_MEDIUM","CNN_YANG_BIG"] #, "MNIST_RELU_5_256", "MNIST_RELU_6_256", 
     job_configs = []
     
     for network in networks:
@@ -158,7 +158,7 @@ def main():
             job_name=f"cifar100_pgd_{network.lower()}",
             script_path="example_scripts/CIFAR/cifar-pgd-training.py",
             partition="gpu-l4-24g", # gpu-short;gpu-2080ti-11g; gpu-mig-40g; gpu-a100-80g; gpu-l4-24g
-            time_limit="3-10:05:00"
+            time_limit="2-15:00:00"
         )
         args = f"--network {network} --experiment_name cifar100-{network.lower()}-pgd-training --dataset cifar100"
         job_configs.append((config, args))
