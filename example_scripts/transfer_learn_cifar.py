@@ -183,7 +183,7 @@ if __name__ == "__main__":
 
     training_objects = AttributeDict(criterion=str(criterion), 
                                      optimizer=str(optimizer), 
-                                     network=str(network), 
+                                     network=str(converted_model), 
                                      scheduler=str(scheduler), 
                                      training_stack=serialize_training_stack(training_stack),
                                      testing_stack=serialize_testing_stack(testing_stack),
