@@ -22,42 +22,56 @@ from adversarial_training_box.pipeline.standard_training_module import StandardT
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
 
+def get_resnet_blocks(model):
+    """Extract all ResNet blocks"""
+    blocks = []
+    for name, module in model.named_children():
+        if name.startswith('layer'): 
+            for block in module.children():
+                blocks.append(block)
+    return blocks
+
 def reset_last_k_layers(model, k):
     """Reset the parameters of the last k layers of a model"""
-    layers = list(model.children())
+    blocks = get_resnet_blocks(model)
 
-    if k > len(layers):
-        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(layers)})")
+    if k > len(blocks):
+        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(blocks)})")
     
     if k <= 0:
-        return  # Nothing to reset
+        raise ValueError(f"k must be positive (got {k}). For transfer learning, you must retrain at least 1 block.")
     
-    # Reset the last k layers
-    for layer in layers[-k:]:
-        if hasattr(layer, 'reset_parameters'):
-            layer.reset_parameters()
-    # TODO: investigate for other cases!
+    # Reset the last k blocks
+    for block in blocks[-k:]:
+        for module in block.modules():
+            if hasattr(module, 'reset_parameters'):
+                module.reset_parameters()
+
+    # Always reset the final FC layer (essential for transfer learning)
+    if hasattr(model, 'fc') and hasattr(model.fc, 'reset_parameters'):
+        model.fc.reset_parameters()
 
 def freeze_except_last_k_layers(model, k):
     """Freeze all parameters except the last k layers"""
-    model.requires_grad_(True)
+    blocks = get_resnet_blocks(model)
 
-    layers = list(model.children())
-    
-    if k > len(layers):
-        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(layers)})")
+    if k > len(blocks):
+        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(blocks)})")
     
     if k <= 0:
-        # If k is 0 or negative, freeze all layers
-        for layer in layers:
-            if hasattr(layer, 'reset_parameters'):
-                layer.requires_grad_(False)
-        return
+        raise ValueError(f"k must be positive (got {k}). For transfer learning, you must retrain at least 1 block.")
+
+    model.requires_grad_(True)
 
     # Freeze all layers except the last k
-    for layer in layers[:-k]:
-        if hasattr(layer, 'reset_parameters'):
-            layer.requires_grad_(False)
+    for block in blocks[:-k]:
+        for param in block.parameters():
+            param.requires_grad_(False)
+    
+    # Always unfreeze the final FC layer
+    if hasattr(model, 'fc'):
+        for param in model.fc.parameters():
+            param.requires_grad = True
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Transfer Learning script with configurable network and experiment name')

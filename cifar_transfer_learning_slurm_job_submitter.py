@@ -20,7 +20,7 @@ class SlurmJobConfig:
     script_path: str
     partition: str = "gpu-short" # gpu-short;gpu-2080ti-11g; gpu-mig-40g; gpu-a100-80g
     time_limit: str = "01:00:00"
-    memory: str = "16G"
+    memory: str = "8G"
     cpus_per_task: int = 1
     gpus: int = 1
     mail_user: str = "dp.wuensch@gmail.com"
@@ -53,7 +53,7 @@ class SlurmJobSubmitter:
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={config.cpus_per_task}
 #SBATCH --mem={config.memory}
-#SBATCH --gres=gpu:{config.gpus}
+#SBATCH --gres=gpu:l4:{config.gpus}
 {additional_params_str}
 # Load required modules
 module load ALICE/default
@@ -164,17 +164,23 @@ def main():
         if hasattr(source_model, 'name'):
             network_name = source_model.name
 
-        num_layers = len(list(source_model.modules())) - 1
+        # Get number of ResNet blocks (layer1, layer2, layer3, layer4)
+        blocks = []
+        for name, module in source_model.named_children():
+            if name.startswith('layer'):
+                for block in module.children():
+                    blocks.append(block)
+        num_blocks = len(blocks)
 
         config = SlurmJobConfig(
             job_name=f"transfer_learning_{network_name}",
             script_path="example_scripts/transfer_learn_cifar.py",
             partition="gpu-short", # gpu-short;gpu-2080ti-11g; gpu-mig-40g; gpu-a100-80g; gpu-l4-24g;
-            time_limit="00:30:00"
+            time_limit="04:00:00"
         )
         
-        for retraining_layers in range(1,num_layers+1):
-            args = f"--source_model {source_model_path} --experiment_name {network_name}-transfer-learning --retraining_layers {retraining_layers}"
+        for retraining_layers in range(1,num_blocks+1):
+            args = f"--source_model_path {source_model_path} --experiment_name {network_name}-transfer-learning --retraining_layers {retraining_layers}"
             job_configs.append((config, args))
     
     job_ids = submitter.submit_multiple_jobs(job_configs, delay_seconds=1, dry_run=False)
