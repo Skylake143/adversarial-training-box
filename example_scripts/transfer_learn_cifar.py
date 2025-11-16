@@ -21,19 +21,20 @@ from adversarial_training_box.models.emnist_net_256x2 import EMNIST_NET_256x2
 from adversarial_training_box.pipeline.standard_training_module import StandardTrainingModule
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
+from torchvision.models.resnet import BasicBlock, Bottleneck
 
 def get_resnet_blocks(model):
     """Extract all ResNet blocks"""
     blocks = []
     for name, module in model.named_children():
-        if name.startswith('layer'): 
-            for block in module.children():
-                blocks.append(block)
+        # if isinstance(module, (BasicBlock, Bottleneck)):
+        #     for block in module.children():
+        blocks.append(module)
     return blocks
 
 def reset_last_k_layers(model, k):
     """Reset the parameters of the last k layers of a model"""
-    blocks = get_resnet_blocks(model)
+    blocks = [module for name, module in model.named_children()]
 
     if k > len(blocks):
         raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(blocks)})")
@@ -53,7 +54,7 @@ def reset_last_k_layers(model, k):
 
 def freeze_except_last_k_layers(model, k):
     """Freeze all parameters except the last k layers"""
-    blocks = get_resnet_blocks(model)
+    blocks = [module for name, module in model.named_children()]
 
     if k > len(blocks):
         raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(blocks)})")
