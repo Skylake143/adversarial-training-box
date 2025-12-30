@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
     # Training modules stack
     training_stack = []
-    training_stack.append((58, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)))
+    training_stack.append((200, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)))
 
     # Testing modules stack
     testing_stack = [
@@ -111,7 +111,7 @@ if __name__ == "__main__":
 
     # Setup experiment
     experiment_tracker = ExperimentTracker(experiment_name, Path("./generated"), login=True)
-    experiment_tracker.initialize_new_experiment("58Epochs", training_parameters=training_parameters | training_objects)
+    experiment_tracker.initialize_new_experiment("PGD_Training", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
 
     # Train
