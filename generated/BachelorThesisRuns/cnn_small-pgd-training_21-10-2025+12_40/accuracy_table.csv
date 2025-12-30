@@ -1,8 +1,0 @@
-,epsilon,attack,accuracy,robust_accuracy
-0,,,0.9763,
-1,0.1,FGSM,0.9763,0.9498
-2,0.2,FGSM,0.9763,0.9179
-3,0.3,FGSM,0.9763,0.8693
-4,0.1,PGD_foolbox_0.01_40_True,0.9763,0.946
-5,0.2,PGD_foolbox_0.01_40_True,0.9763,0.8934
-6,0.3,PGD_foolbox_0.01_40_True,0.9763,0.7989

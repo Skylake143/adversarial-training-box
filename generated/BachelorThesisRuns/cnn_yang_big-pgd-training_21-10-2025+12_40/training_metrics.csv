@@ -1,2 +1,0 @@
-,training_time (s),early_stopping,early_stopping_epoch,training_start_datetime,device_info
-0,2196.9955,True,36,2025-10-21 12:40:57,GPU: NVIDIA L4 (22.0 GB VRAM)
