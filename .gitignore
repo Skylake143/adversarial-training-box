@@ -45,6 +45,12 @@ TransferLearning/s8w3y7ro/checkpoints/epoch=16-step=850.ckpt
 *.pth
 
 cifar_pgd_slurm_job_submitter.py
+cifar100_pgd_slurm_job_submitter.py
+cifar100_slurm_job_submitter.py
+emnist_slurm_job_submitter.py
+mnist_slurm_job_submitter.py
+transfer_learning_slurm_job_submitter.py
+transfer_learning.slurm
 cifar_pgd_slurm_job_submitterTest.py
 cifar_pgd_slurm_job_submitter.py
 cifar_pgd_slurm_job_submitter.py
