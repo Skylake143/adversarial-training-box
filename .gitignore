@@ -56,6 +56,7 @@ cifar_pgd_slurm_job_submitter.py
 cifar_pgd_slurm_job_submitter.py
 cifar_slurm_job_submitter.py
 cifar_transfer_learning_slurm_job_submitter.py
+cifar100-pgd-training.py
 
 emnist-net_256x2-pgd-training.py
 emnist-net_256x2-standard-training.py
