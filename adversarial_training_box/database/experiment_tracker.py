@@ -157,3 +157,6 @@ class ExperimentTracker:
             wandb.log({"accuracy_table" : table})
         else:
             print("[WARNING] results can't be logged online. Login is set to false")
+
+    def finish(self):
+        wandb.finish()

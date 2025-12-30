@@ -1,9 +1,10 @@
 from random import shuffle
-from adversarial_training_box.models.MNIST.cnn_yang_big import CNN_YANG_BIG
 import copy
 import torch
+from torch.optim.lr_scheduler import MultiStepLR
 import torch.optim as optim
 import torchvision
+from torchvision import transforms
 import torch.nn as nn
 from pathlib import Path
 import optuna
@@ -20,45 +21,79 @@ from adversarial_training_box.models.emnist_net_256x2 import EMNIST_NET_256x2
 from adversarial_training_box.pipeline.standard_training_module import StandardTrainingModule
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
+from torchvision.models.resnet import BasicBlock, Bottleneck
+
+def get_resnet_blocks(model):
+    """Extract all blocks for ResNet and WideResNet architectures"""
+
+    blocks = []
+    # For the ResNet architecture, that we use
+    if hasattr(model, 'conv2_x'):
+        blocks.extend([
+            ('conv1', model.conv1),
+            ('conv2_x', model.conv2_x),
+            ('conv3_x', model.conv3_x),
+            ('conv4_x', model.conv4_x),
+            ('conv5_x', model.conv5_x),
+            ('avg_pool', model.avg_pool),
+            ('fc', model.fc)
+        ])
+    elif hasattr(model, 'layer1'):
+        # WideResNet structure
+        blocks.extend([
+            ('conv1', model.conv1),
+            ('layer1', model.layer1),
+            ('layer2', model.layer2),
+            ('layer3', model.layer3),
+            ('bn1', model.bn1),
+            ('linear', model.linear)
+        ])
+    else:
+        # Fallback for other model structures
+        for name, module in model.named_children():
+            blocks.append((name, module))
+    return blocks
 
 def reset_last_k_layers(model, k):
     """Reset the parameters of the last k layers of a model"""
-    layers = list(model.children())
+    blocks = get_resnet_blocks(model)
 
-    if k > len(layers):
-        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(layers)})")
+    if k > len(blocks):
+        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(blocks)})")
     
     if k <= 0:
-        return  # Nothing to reset
+        raise ValueError(f"k must be positive (got {k}). For transfer learning, you must retrain at least 1 block.")
     
-    # Reset the last k layers
-    for layer in layers[-k:]:
-        if hasattr(layer, 'reset_parameters'):
-            layer.reset_parameters()
-    # TODO: investigate for other cases!
+    # Reset the last k blocks
+    for name, block in blocks[-k:]:
+        print(f"  Resetting: {name}")
+        for module in block.modules():
+            if hasattr(module, 'reset_parameters'):
+                module.reset_parameters()
 
 def freeze_except_last_k_layers(model, k):
     """Freeze all parameters except the last k layers"""
-    model.requires_grad_(True)
+    blocks = get_resnet_blocks(model)
 
-    layers = list(model.children())
-    
-    if k > len(layers):
-        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(layers)})")
+    if k > len(blocks):
+        raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(blocks)})")
     
     if k <= 0:
-        # If k is 0 or negative, freeze all layers
-        for layer in layers:
-            if hasattr(layer, 'reset_parameters'):
-                layer.requires_grad_(False)
-        return
+        raise ValueError(f"k must be positive (got {k}). For transfer learning, you must retrain at least 1 block.")
 
-    # Freeze all layers except the last k
-    for layer in layers[:-k]:
-        if hasattr(layer, 'reset_parameters'):
-            layer.requires_grad_(False)
+    for param in model.parameters():
+        param.requires_grad= False
+
+    # Unfreeze only the last k blocks
+    for name, block in blocks[-k:]:
+        print(f"  Unfreezing: {name}")
+        for param in block.parameters():
+            param.requires_grad = True
 
 if __name__ == "__main__":
+    # torch.backends.cudnn.benchmark = False
+    # torch.backends.cudnn.deterministic = True
+
     parser = argparse.ArgumentParser(description='Transfer Learning script with configurable network and experiment name')
     parser.add_argument('--source_model_path', type=str, default='"generated/BachelorThesisRuns/cnn_yang_big-pgd-training_21-10-2025+12_40/cnn_yang_big.pth"',
                        help='Source model path')
@@ -69,14 +104,14 @@ if __name__ == "__main__":
     args = parser.parse_args()  # Add this line to actually parse the arguments
 
     training_parameters = AttributeDict(
-        learning_rate = 0.001,
-        weight_decay = 1e-4,
-        scheduler_step_size=10,
-        scheduler_gamma=0.98,
-        attack_epsilon=0.3, 
-        patience_epochs=6, 
+        learning_rate = 0.1,
+        weight_decay = 5e-4,
+        momentum = 0.9,
+        scheduler_milestones=[60, 120, 160],
+        scheduler_gamma=0.2,
+        patience_epochs=6,
         overhead_delta=0.0,
-        batch_size=256)
+        batch_size=128) # TODO
     
     source_model_path = Path(args.source_model_path)
     experiment_name = args.experiment_name
@@ -87,7 +122,7 @@ if __name__ == "__main__":
     source_model_copy = copy.deepcopy(source_model)
 
     # Network converter to adapt to target domain
-    def convert_last_layer(network, num_classes=47):
+    def convert_last_layer(network, num_classes=100):
         layers = list(network.named_modules())
         last_layer_name = layers[-1][0]
         last_layer_module = layers[-1][1]
@@ -107,40 +142,62 @@ if __name__ == "__main__":
 
     freeze_except_last_k_layers(converted_model, retraining_layers)
 
+    cifar_mean = [0.5071, 0.4865, 0.4409]
+    cifar_std = [0.2673, 0.2564, 0.2762]
+    
+    normalize = transforms.Normalize(mean=cifar_mean,std=cifar_std)
+
+    mean_std = sum(cifar_std) / len(cifar_std)
+
+    train_transform = transforms.Compose([])
+    train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
+    train_transform.transforms.append(transforms.RandomHorizontalFlip())
+    train_transform.transforms.append(transforms.ToTensor())
+    train_transform.transforms.append(normalize)
+    
+    test_transform = transforms.Compose([transforms.ToTensor(), normalize])
+
+    num_classes = 100
+    full_train_dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=train_transform)
+    full_validation_dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=test_transform)
+    train_size = int(0.8 * len(full_train_dataset))
+    val_size = len(full_train_dataset) - train_size
+    generator = torch.Generator().manual_seed(43)
+
+    # Split with same indices for both
+    train_dataset, _ = torch.utils.data.random_split(full_train_dataset, [train_size, val_size], generator=generator)
+    _, validation_dataset = torch.utils.data.random_split(full_validation_dataset, [train_size, val_size], generator=generator)
+
+    test_dataset = torchvision.datasets.CIFAR100('./data', train=False, download=True, transform=test_transform)
+    
+    # Dataloaders
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
+    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=512, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=512, shuffle=True)    
+
     # Training configuration
-    optimizer = getattr(optim, 'Adam')(converted_model.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
+    optimizer = getattr(optim, 'SGD')(converted_model.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay, momentum=training_parameters.momentum)
+    scheduler = MultiStepLR(optimizer, milestones=training_parameters.scheduler_milestones, gamma=training_parameters.scheduler_gamma)
     criterion = nn.CrossEntropyLoss()
     early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
-
-    # Train, validation and test dataset
-    dataset = torchvision.datasets.EMNIST('../data', split="balanced",train=True, download=True, transform=torchvision.transforms.ToTensor())
-    train_dataset,validation_dataset, = torch.utils.data.random_split(dataset, (0.8, 0.2))
-    test_dataset = torchvision.datasets.EMNIST('../data', split="balanced",train=False, download=True, transform=torchvision.transforms.ToTensor())
-
-   # Dataloaders
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
-    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=1000, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
 
     # Validation module
     validation_module = StandardTestModule(criterion=criterion)
 
     # Training modules stack
     training_stack = []
-    training_stack.append((300, StandardTrainingModule(criterion=criterion)))
+    training_stack.append((200, StandardTrainingModule(criterion=criterion)))
 
     # Testing modules stack
-    testing_stack = [
-        StandardTestModule(),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.1),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.2),
-        StandardTestModule(attack=FGSMAttack(), epsilon=0.3),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.1),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.2),
-        StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3),
+    testing_stack = [StandardTestModule(),
+        StandardTestModule(attack=FGSMAttack(), epsilon=2/255/mean_std),
+        StandardTestModule(attack=FGSMAttack(), epsilon=4/255/mean_std),
+        StandardTestModule(attack=FGSMAttack(), epsilon=8/255/mean_std),
+        StandardTestModule(attack=PGDAttack(epsilon_step_size=2/255/mean_std/4, number_iterations=20, random_init=True), epsilon=2/255/mean_std),
+        StandardTestModule(attack=PGDAttack(epsilon_step_size=4/255/mean_std/4, number_iterations=20, random_init=True), epsilon=4/255/mean_std),
+        StandardTestModule(attack=PGDAttack(epsilon_step_size=8/255/mean_std/4, number_iterations=20, random_init=True), epsilon=8/255/mean_std),
     ]
-
+    
     # Convert complex objects to JSON-serializable format
     def serialize_training_stack(stack):
         return [{"epochs": epochs, "module_type": type(module).__name__, 
@@ -180,3 +237,6 @@ if __name__ == "__main__":
     network = experiment_tracker.load_trained_model(converted_model)
     pipeline.test(network, test_loader, testing_stack=testing_stack)
     experiment_tracker.export_to_onnx(network, test_loader)
+
+    # Finish logging
+    experiment_tracker.finish()

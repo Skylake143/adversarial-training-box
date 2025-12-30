@@ -60,7 +60,7 @@ class Pipeline:
         # Early stopper data
         best_validation_accuracy=-1.0
         early_stopping = False
-        early_stopping_epoch = None
+        stopping_epoch = None
 
         if validation_module and hasattr(validation_module, 'attack') and validation_module.attack:
             smoothing_window_size = 10
@@ -105,14 +105,14 @@ class Pipeline:
 
                                 if early_stopper.early_stop(smoothed_val_robust_accuracy):
                                     early_stopping = True
-                                    early_stopping_epoch = epoch + 1
-                                    print(f"Early stopped at epoch: {early_stopping_epoch}")
+                                    stopping_epoch = epoch + 1
+                                    print(f"Early stopped at epoch: {stopping_epoch}")
                                     break
                         else: # Early stopping call based on validation accuracy
                             if early_stopper.early_stop(validation_accuracy):
                                 early_stopping = True
-                                early_stopping_epoch = epoch + 1
-                                print(f"Early stopped at epoch: {early_stopping_epoch}")
+                                stopping_epoch = epoch + 1
+                                print(f"Early stopped at epoch: {stopping_epoch}")
                                 break
 
                     if validation_accuracy > best_validation_accuracy:
@@ -121,6 +121,8 @@ class Pipeline:
                         self.save_model(network)
                 else: 
                     self.save_model(network)
+            if stopping_epoch == None:
+                stopping_epoch = epochs
         
         if torch.cuda.is_available():
             end_event.record()
@@ -133,7 +135,7 @@ class Pipeline:
         
         if not self.experiment_tracker is None:
             self.experiment_tracker.log_train_accuracies({"Train Accuracy" : train_accuracy, "Train Robust Accuracy" : robust_accuracy, "Validation Accuracy" : validation_accuracy, "Validation Robust Accuracy" : validation_robust_accuracy})
-            self.experiment_tracker.log_training_metrics({"training_time (s)" : training_time, "early_stopping" : bool(early_stopping), "early_stopping_epoch" : early_stopping_epoch, "Retrained blocks" : retraining_layers, "training_start_datetime" : training_starttime, "device_info" : device_info})
+            self.experiment_tracker.log_training_metrics({"training_time (s)" : training_time, "early_stopping" : bool(early_stopping), "stopping_epoch" : stopping_epoch, "Retrained blocks" : retraining_layers, "training_start_datetime" : training_starttime, "device_info" : device_info})
 
     def test(self, network: torch.nn.Module, test_loader: torch.utils.data.DataLoader, testing_stack: list[TestModule]):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

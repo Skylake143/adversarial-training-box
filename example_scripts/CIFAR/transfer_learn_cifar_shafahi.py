@@ -23,18 +23,154 @@ from adversarial_training_box.pipeline.standard_test_module import StandardTestM
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
 from torchvision.models.resnet import BasicBlock, Bottleneck
 
+import torch
+import torch.nn.functional as F
+
+class LwFLoss(nn.Module):
+    """Learning without Forgetting Loss Implementation"""
+    def __init__(self, lambda_lwf=1.0, temperature=4.0):
+        super().__init__()
+        self.lambda_lwf = lambda_lwf
+        self.temperature = temperature
+        
+    def forward(self, new_outputs, old_outputs, targets, old_features=None, new_features=None):
+        # Standard cross-entropy loss for new task
+        ce_loss = F.cross_entropy(new_outputs, targets)
+        
+        # Knowledge distillation loss on outputs - only if dimensions match
+        kd_loss = 0
+        if old_outputs.size(-1) == new_outputs.size(-1):
+            old_outputs_soft = F.softmax(old_outputs / self.temperature, dim=1)
+            new_outputs_soft = F.log_softmax(new_outputs / self.temperature, dim=1)
+            kd_loss = F.kl_div(new_outputs_soft, old_outputs_soft, reduction='batchmean')
+            kd_loss *= (self.temperature ** 2)
+        
+        # Feature representation preservation (similar to the TensorFlow version)
+        feat_loss = 0
+        if old_features is not None and new_features is not None:
+            # L1 norm difference between old and new features (matching TF version)
+            feat_loss = torch.mean(torch.norm(new_features - old_features, p=1, dim=1))
+        
+        total_loss = ce_loss + self.lambda_lwf * (kd_loss + feat_loss)
+        return total_loss, ce_loss, kd_loss, feat_loss
+
+def extract_features(model, x, feature_layer_name='avg_pool'):
+    """Extract intermediate features from model"""
+    features = None
+    def hook_fn(module, input, output):
+        nonlocal features
+        features = output.flatten(1)  # Flatten to (batch_size, -1)
+    
+    # Register hook on the specified layer
+    for name, module in model.named_modules():
+        if feature_layer_name in name:
+            handle = module.register_forward_hook(hook_fn)
+            break
+    
+    with torch.no_grad():
+        _ = model(x)
+    
+    if 'handle' in locals():
+        handle.remove()
+    
+    return features.detach() if features is not None else None
+
+# Modified training module for LwF
+class LwFTrainingModule:
+    def __init__(self, criterion, lwf_criterion, source_model, lambda_lwf=1.0):
+        self.criterion = criterion
+        self.lwf_criterion = lwf_criterion
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.source_model = source_model.eval().to(self.device)  # Keep source model frozen and on correct device
+        self.lambda_lwf = lambda_lwf
+        
+    def train(self, data_loader, network, optimizer, experiment_tracker=None):
+        network.train()
+        network = network.to(self.device)
+        self.source_model.eval()
+        
+        total_loss_sum = 0.0
+        ce_loss_sum = 0.0
+        kd_loss_sum = 0.0
+        feat_loss_sum = 0.0
+        total_samples = 0
+        
+        for batch_idx, (data, target) in enumerate(data_loader):
+            data, target = data.to(self.device), target.to(self.device)
+            optimizer.zero_grad()
+            
+            # Forward pass through both models
+            new_outputs = network(data)
+            
+            with torch.no_grad():
+                old_outputs = self.source_model(data)
+                old_features = extract_features(self.source_model, data)
+            
+            new_features = extract_features(network, data)
+            
+            # Compute LwF loss
+            total_loss, ce_loss, kd_loss, feat_loss = self.lwf_criterion(
+                new_outputs, old_outputs, target, old_features, new_features
+            )
+            
+            # Backward pass
+            total_loss.backward()
+            optimizer.step()
+            
+            # Accumulate losses
+            batch_size = target.size(0)
+            total_loss_sum += total_loss.item() * batch_size
+            ce_loss_sum += ce_loss.item() * batch_size
+            kd_loss_sum += (kd_loss.item() if torch.is_tensor(kd_loss) else kd_loss) * batch_size
+            feat_loss_sum += (feat_loss.item() if torch.is_tensor(feat_loss) else feat_loss) * batch_size
+            total_samples += batch_size
+            
+            if experiment_tracker:
+                experiment_tracker.log({
+                    "train_loss": total_loss.item(),
+                    "ce_loss": ce_loss.item(),
+                    "kd_loss": kd_loss.item() if torch.is_tensor(kd_loss) else kd_loss,
+                    "feat_loss": feat_loss.item() if torch.is_tensor(feat_loss) else feat_loss
+                })
+        
+        # Calculate accuracy for compatibility with pipeline
+        correct_predictions = 0
+        for batch_idx, (data, target) in enumerate(data_loader):
+            data, target = data.to(self.device), target.to(self.device)
+            with torch.no_grad():
+                outputs = network(data)
+                predictions = outputs.max(1)[1]
+                correct_predictions += (predictions == target).sum().item()
+        
+        train_accuracy = correct_predictions / total_samples
+        
+        # Return in the format expected by pipeline (train_accuracy, robust_accuracy)
+        return train_accuracy, None
+
 def get_resnet_blocks(model):
     """Extract all ResNet blocks"""
+
     blocks = []
-    for name, module in model.named_children():
-        # if isinstance(module, (BasicBlock, Bottleneck)):
-        #     for block in module.children():
-        blocks.append(module)
+    # For the ResNet architecture, that we use
+    if hasattr(model, 'conv2_x'):
+        blocks.extend([
+            ('conv1', model.conv1),
+            ('conv2_x', model.conv2_x),
+            ('conv3_x', model.conv3_x),
+            ('conv4_x', model.conv4_x),
+            ('conv5_x', model.conv5_x),
+            ('avg_pool', model.avg_pool),
+            ('fc', model.fc)
+        ])
+    else:
+        # Fallback for other ResNet structures
+        for name, module in model.named_children():
+            blocks.append((name, module))
     return blocks
 
 def reset_last_k_layers(model, k):
     """Reset the parameters of the last k layers of a model"""
-    blocks = [module for name, module in model.named_children()]
+    blocks = get_resnet_blocks(model)
 
     if k > len(blocks):
         raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(blocks)})")
@@ -43,18 +179,15 @@ def reset_last_k_layers(model, k):
         raise ValueError(f"k must be positive (got {k}). For transfer learning, you must retrain at least 1 block.")
     
     # Reset the last k blocks
-    for block in blocks[-k:]:
+    for name, block in blocks[-k:]:
+        print(f"  Resetting: {name}")
         for module in block.modules():
             if hasattr(module, 'reset_parameters'):
                 module.reset_parameters()
 
-    # Always reset the final FC layer (essential for transfer learning)
-    if hasattr(model, 'fc') and hasattr(model.fc, 'reset_parameters'):
-        model.fc.reset_parameters()
-
 def freeze_except_last_k_layers(model, k):
     """Freeze all parameters except the last k layers"""
-    blocks = [module for name, module in model.named_children()]
+    blocks = get_resnet_blocks(model)
 
     if k > len(blocks):
         raise ValueError(f"k ({k}) cannot be larger than the number of layers ({len(blocks)})")
@@ -62,19 +195,19 @@ def freeze_except_last_k_layers(model, k):
     if k <= 0:
         raise ValueError(f"k must be positive (got {k}). For transfer learning, you must retrain at least 1 block.")
 
-    model.requires_grad_(True)
+    for param in model.parameters():
+        param.requires_grad= False
 
-    # Freeze all layers except the last k
-    for block in blocks[:-k]:
+    # Unfreeze only the last k blocks
+    for name, block in blocks[-k:]:
+        print(f"  Unfreezing: {name}")
         for param in block.parameters():
-            param.requires_grad_(False)
-    
-    # Always unfreeze the final FC layer
-    if hasattr(model, 'fc'):
-        for param in model.fc.parameters():
             param.requires_grad = True
 
 if __name__ == "__main__":
+    # torch.backends.cudnn.benchmark = False
+    # torch.backends.cudnn.deterministic = True
+
     parser = argparse.ArgumentParser(description='Transfer Learning script with configurable network and experiment name')
     parser.add_argument('--source_model_path', type=str, default='"generated/BachelorThesisRuns/cnn_yang_big-pgd-training_21-10-2025+12_40/cnn_yang_big.pth"',
                        help='Source model path')
@@ -90,18 +223,27 @@ if __name__ == "__main__":
         momentum = 0.9,
         scheduler_milestones=[60, 120, 160],
         scheduler_gamma=0.2,
-        attack_epsilon=8/255,
         patience_epochs=6,
         overhead_delta=0.0,
-        batch_size=128)
+        batch_size=256)
     
     source_model_path = Path(args.source_model_path)
     experiment_name = args.experiment_name
     retraining_layers = args.retraining_layers
 
+    # Device setup
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    
     # Source model
     source_model = torch.load(source_model_path, map_location='cpu')
     source_model_copy = copy.deepcopy(source_model)
+    source_model_copy.eval().to(device)
+
+    # Create separate LwF source model that keeps original architecture
+    source_model_for_lwf = copy.deepcopy(source_model)
+    source_model_for_lwf.eval().to(device)
+
 
     # Network converter to adapt to target domain
     def convert_last_layer(network, num_classes=100):
@@ -117,12 +259,16 @@ if __name__ == "__main__":
         setattr(network, last_layer_name, new_layer)
         
         return network
-
-    converted_model = convert_last_layer(source_model_copy)
     
-    reset_last_k_layers(converted_model, retraining_layers)
+    # Convert source model for target task
+    converted_model = convert_last_layer(source_model_copy)
 
-    freeze_except_last_k_layers(converted_model, retraining_layers)
+    # Reset/freeze layers based on retraining strategy
+    if retraining_layers > 0:
+        print(f"Resetting last {retraining_layers} layers")
+        reset_last_k_layers(converted_model, retraining_layers)
+        print(f"Freezing all except last {retraining_layers} layers") 
+        freeze_except_last_k_layers(converted_model, retraining_layers)
 
     cifar_mean = [0.5071, 0.4865, 0.4409]
     cifar_std = [0.2673, 0.2564, 0.2762]
@@ -157,18 +303,39 @@ if __name__ == "__main__":
     validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=512, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=512, shuffle=True)    
 
+    # Setup optimizer and scheduler
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, converted_model.parameters()),
+                         lr=training_parameters.learning_rate,
+                         momentum=training_parameters.momentum,
+                         weight_decay=training_parameters.weight_decay)
+    
+    scheduler = MultiStepLR(optimizer, 
+                           milestones=training_parameters.scheduler_milestones,
+                           gamma=training_parameters.scheduler_gamma)
+    
+    # Setup early stopper
+    early_stopper = EarlyStopper(patience=training_parameters.patience_epochs,
+                                delta=training_parameters.overhead_delta)
+
     # Training configuration
-    optimizer = getattr(optim, 'SGD')(converted_model.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay, momentum=training_parameters.momentum)
-    scheduler = MultiStepLR(optimizer, milestones=training_parameters.scheduler_milestones, gamma=training_parameters.scheduler_gamma)
     criterion = nn.CrossEntropyLoss()
-    early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
 
     # Validation module
     validation_module = StandardTestModule(criterion=criterion)
 
     # Training modules stack
+    # Setup LwF components
+    lwf_criterion = LwFLoss(lambda_lwf=1.0, temperature=4.0)
+    lwf_training_module = LwFTrainingModule(
+        criterion=criterion,
+        lwf_criterion=lwf_criterion,
+        source_model=source_model_for_lwf,
+        lambda_lwf=1.0
+    )
+    
+    # Modified training stack with LwF
     training_stack = []
-    training_stack.append((200, StandardTrainingModule(criterion=criterion)))
+    training_stack.append((200, lwf_training_module))
 
     # Testing modules stack
     testing_stack = [StandardTestModule(),
@@ -196,6 +363,10 @@ if __name__ == "__main__":
                 "attack": type(getattr(module, 'attack', None)).__name__ if hasattr(module, 'attack') and module.attack else "None",
                 "epsilon": getattr(module, 'epsilon', None)}
 
+    # Handle experiment name
+    if experiment_name is None:
+        experiment_name = f"{source_model_path.stem}-transfer-learning"
+
     training_objects = AttributeDict(criterion=str(criterion), 
                                      optimizer=str(optimizer), 
                                      network=str(converted_model), 
@@ -206,16 +377,19 @@ if __name__ == "__main__":
 
     # Setup experiment
     experiment_tracker = ExperimentTracker(experiment_name, Path("./generated"), login=True)
-    experiment_tracker.initialize_new_experiment(f"TL{retraining_layers}", training_parameters=training_parameters | training_objects)
+    experiment_tracker.initialize_new_experiment(f"TL{retraining_layers}_shafahi", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
     
     # Train
     pipeline.train(train_loader, converted_model, training_stack, early_stopper=early_stopper, 
                    validation_loader=validation_loader,
-                   validation_module=validation_module, retraining_layers=retraining_layers
+                   validation_module=validation_module
                    )
     
     # Test
     network = experiment_tracker.load_trained_model(converted_model)
     pipeline.test(network, test_loader, testing_stack=testing_stack)
     experiment_tracker.export_to_onnx(network, test_loader)
+
+    # Finish logging
+    experiment_tracker.finish()

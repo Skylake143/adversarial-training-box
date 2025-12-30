@@ -183,11 +183,11 @@ if __name__ == "__main__":
 
     # Setup experiment
     experiment_tracker = ExperimentTracker(experiment_name, Path("./generated"), login=True)
-    experiment_tracker.initialize_new_experiment("BARun", training_parameters=training_parameters | training_objects)
+    experiment_tracker.initialize_new_experiment("TestRun0711Replication", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
 
     # Train
-    pipeline.train(train_loader, network, training_stack, early_stopper=early_stopper, 
+    pipeline.train(train_loader, network, training_stack, early_stopper=None, 
                    validation_loader=validation_loader,
                    validation_module=validation_module
                    )

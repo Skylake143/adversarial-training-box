@@ -52,7 +52,7 @@ if __name__ == "__main__":
     parser.add_argument('--network', type=str, default=None,
                        help='Network architecture name')
     parser.add_argument('--experiment_name', type=str, default=None,
-                       help='Custom experiment name (default: {network}-standard-training)')
+                       help='Custom experiment name (default: {network}-pgd-training)')
     parser.add_argument('--dataset', type=str, default='cifar10')
     args = parser.parse_args()  # Add this line to actually parse the arguments
 
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         scheduler_milestones=[60, 120, 160],
         scheduler_gamma=0.2,
         attack_epsilon=8/255,
-        patience_epochs=6,
+        patience_epochs=8,
         overhead_delta=0.0,
         batch_size=128)
     
@@ -80,20 +80,13 @@ if __name__ == "__main__":
         train_transform.transforms.append(transforms.RandomHorizontalFlip())
         train_transform.transforms.append(transforms.ToTensor())
         train_transform.transforms.append(normalize)
-
+        
         test_transform = transforms.Compose([transforms.ToTensor(), normalize])
 
         num_classes = 10
-        full_train_dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=train_transform)
-        full_validation_dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=test_transform)
-        train_size = int(0.8 * len(full_train_dataset))
-        val_size = len(full_train_dataset) - train_size
-        generator = torch.Generator().manual_seed(42)
-        
-        # Split with same indices for both
-        train_dataset, _ = torch.utils.data.random_split(full_train_dataset, [train_size, val_size], generator=generator)
-        _, validation_dataset = torch.utils.data.random_split(full_validation_dataset, [train_size, val_size], generator=generator)
-    
+        train_dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=train_transform)
+        # Use test dataset for validation
+        validation_dataset = torchvision.datasets.CIFAR10('./data', train=False, download=True, transform=test_transform)
         test_dataset = torchvision.datasets.CIFAR10('./data', train=False, download=True, transform=test_transform)
 
     elif args.dataset == 'cifar100':
@@ -113,18 +106,10 @@ if __name__ == "__main__":
         test_transform = transforms.Compose([transforms.ToTensor(), normalize])
 
         num_classes = 100
-        full_train_dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=train_transform)
-        full_validation_dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=test_transform)
-        train_size = int(0.8 * len(full_train_dataset))
-        val_size = len(full_train_dataset) - train_size
-        generator = torch.Generator().manual_seed(43)
-        
-        # Split with same indices for both
-        train_dataset, _ = torch.utils.data.random_split(full_train_dataset, [train_size, val_size], generator=generator)
-        _, validation_dataset = torch.utils.data.random_split(full_validation_dataset, [train_size, val_size], generator=generator)
-    
+        train_dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=train_transform)
+        # Use test dataset for validation
+        validation_dataset = torchvision.datasets.CIFAR100('./data', train=False, download=True, transform=test_transform)
         test_dataset = torchvision.datasets.CIFAR100('./data', train=False, download=True, transform=test_transform)
-
 
     experiment_name = args.experiment_name
     network_function = get_network_class(args.network)
@@ -132,21 +117,21 @@ if __name__ == "__main__":
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
-    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=512, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=512, shuffle=True)    
+    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=512, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=512, shuffle=False)
 
     # Training configuration
     optimizer = getattr(optim, 'SGD')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay, momentum=training_parameters.momentum)
     scheduler = MultiStepLR(optimizer, milestones=training_parameters.scheduler_milestones, gamma=training_parameters.scheduler_gamma)
     criterion = nn.CrossEntropyLoss()
     early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
-
+    
     # Validation module
-    validation_module = StandardTestModule(criterion=criterion)
+    validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=8/255/mean_std/4, number_iterations=20, random_init=True), epsilon=training_parameters.attack_epsilon/mean_std, criterion=criterion)
 
     # Training modules stack
     training_stack = []
-    training_stack.append((200, StandardTrainingModule(criterion=criterion)))
+    training_stack.append((200, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=8/255/mean_std/4, number_iterations=7, random_init=True), epsilon=training_parameters.attack_epsilon/mean_std)))
 
     # Testing modules stack
     testing_stack = [StandardTestModule(),
@@ -184,7 +169,7 @@ if __name__ == "__main__":
 
     # Setup experiment
     experiment_tracker = ExperimentTracker(experiment_name, Path("./generated"), login=True)
-    experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
+    experiment_tracker.initialize_new_experiment("TestFull50000", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
 
     # Train
