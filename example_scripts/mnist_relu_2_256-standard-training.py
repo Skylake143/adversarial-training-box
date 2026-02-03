@@ -6,20 +6,22 @@ import torch.nn as nn
 from pathlib import Path
 import optuna
 from optuna.trial import TrialState
-from early_stopping_pytorch import EarlyStopping
+import argparse
+import importlib
+from adversarial_training_box.pipeline.early_stopper import EarlyStopper
 
 from adversarial_training_box.adversarial_attack.pgd_attack import PGDAttack
 from adversarial_training_box.adversarial_attack.fgsm_attack import FGSMAttack
 from adversarial_training_box.database.experiment_tracker import ExperimentTracker
 from adversarial_training_box.database.attribute_dict import AttributeDict
 from adversarial_training_box.pipeline.pipeline import Pipeline
-from adversarial_training_box.models.mnist_relu_2_256 import MNIST_NET_256x2
+from adversarial_training_box.models.MNIST.mnist_relu_2_256 import MNIST_RELU_2_256
 from adversarial_training_box.pipeline.standard_training_module import StandardTrainingModule
 from adversarial_training_box.pipeline.standard_test_module import StandardTestModule
 from adversarial_training_box.adversarial_attack.auto_attack_module import AutoAttackModule
 
 def objective(trial):
-    network = MNIST_NET_256x2() # Can you automate this by keeping the network variable??
+    network = MNIST_RELU_2_256() 
 
     optimizer_name = "Adam"
     weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-1, log=True)
@@ -90,27 +92,31 @@ if __name__ == "__main__":
     #                                     early_stopper_min_delta=0.002,
     #                                     patience_epochs=5, 
     #                                     batch_size=256)
+
+    # Experiment configuration
     training_parameters = AttributeDict(
-        learning_rate = 0.002,
-        weight_decay = 1e-5,
-        scheduler_step_size=3,
-        scheduler_gamma=0.96,
+        learning_rate = 0.001,
+        weight_decay = 1e-4,
+        scheduler_step_size=10,
+        scheduler_gamma=0.98,
         attack_epsilon=0.3, 
-        patience_epochs=5, 
+        patience_epochs=6, 
+        overhead_delta=0.0,
         batch_size=256)
     
-    network = MNIST_NET_256x2()
+    experiment_name = "MNIST_RELU_2_256"
+    network = MNIST_RELU_2_256()
 
     # Training configuration
     optimizer = getattr(optim, 'Adam')(network.parameters(), lr=training_parameters.learning_rate, weight_decay=training_parameters.weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=training_parameters.scheduler_step_size, gamma=training_parameters.scheduler_gamma)
     criterion = nn.CrossEntropyLoss()
-    early_stopper = EarlyStopping(patience=training_parameters.patience_epochs,verbose=True)
+    early_stopper = EarlyStopper(patience=training_parameters.patience_epochs, delta=training_parameters.overhead_delta)
 
     # Train, validation and test dataset
     dataset = torchvision.datasets.MNIST('../data', train=True, download=True, transform=torchvision.transforms.ToTensor())
     train_dataset,validation_dataset, = torch.utils.data.random_split(dataset, (0.8, 0.2))
-    test_dataset = torchvision.datasets.MNIST('../data', train=False, download=True, transform=torchvision.transforms.ToTensor())
+    test_dataset = torchvision.datasets.MNIST('../data',train=False, download=True, transform=torchvision.transforms.ToTensor())
 
     # Dataloaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=training_parameters.batch_size, shuffle=True)
@@ -118,15 +124,14 @@ if __name__ == "__main__":
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=True)
 
     # Validation module
-    validation_module = StandardTestModule(attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3, criterion=criterion)
+    validation_module = StandardTestModule(criterion=criterion)
 
     # Training modules stack
     training_stack = []
-    training_stack.append((300, StandardTrainingModule(criterion=criterion, attack=PGDAttack(epsilon_step_size=0.01, number_iterations=40, random_init=True), epsilon=0.3)))
+    training_stack.append((300, StandardTrainingModule(criterion=criterion)))
 
     # Testing modules stack
-    testing_stack = [
-        StandardTestModule(),
+    testing_stack = [StandardTestModule(),
         StandardTestModule(attack=FGSMAttack(), epsilon=0.1),
         StandardTestModule(attack=FGSMAttack(), epsilon=0.2),
         StandardTestModule(attack=FGSMAttack(), epsilon=0.3),
@@ -160,7 +165,7 @@ if __name__ == "__main__":
                                      validation_module=serialize_validation_module(validation_module))
 
     # Setup experiment
-    experiment_tracker = ExperimentTracker("mnist_net_256x2-pgd-training", Path("./generated"), login=True)
+    experiment_tracker = ExperimentTracker(experiment_name, Path("./generated"), login=True)
     experiment_tracker.initialize_new_experiment("", training_parameters=training_parameters | training_objects)
     pipeline = Pipeline(experiment_tracker, training_parameters, criterion, optimizer, scheduler)
 
@@ -172,5 +177,5 @@ if __name__ == "__main__":
 
     # Test
     network = experiment_tracker.load_trained_model(network)
-    experiment_tracker.export_to_onnx(network, test_loader)
     pipeline.test(network, test_loader, testing_stack=testing_stack)
+    experiment_tracker.export_to_onnx(network, test_loader)
